@@ -34,7 +34,9 @@ class KBService:
     @staticmethod
     async def get(db: AsyncSession, kb_id: str) -> dict | None:
         result = await db.execute(
-            select(KnowledgeBase).where(KnowledgeBase.id == kb_id)
+            select(KnowledgeBase)
+            .where(KnowledgeBase.id == kb_id)
+            .options(selectinload(KnowledgeBase.files))
         )
         kb = result.scalar_one_or_none()
         if not kb:
@@ -51,7 +53,9 @@ class KBService:
     @staticmethod
     async def delete(db: AsyncSession, kb_id: str) -> bool:
         result = await db.execute(
-            select(KnowledgeBase).where(KnowledgeBase.id == kb_id)
+            select(KnowledgeBase)
+            .where(KnowledgeBase.id == kb_id)
+            .options(selectinload(KnowledgeBase.files))
         )
         kb = result.scalar_one_or_none()
         if not kb:
