@@ -15,15 +15,28 @@
 │       │          │          │            │           │
 │  ┌────▼──────────▼──────────▼────────────▼────────┐ │
 │  │              Service 业务层                      │ │
-│  │  KBService │ FileService │ EmbeddingService │   │ │
+│  │  KBService │ FileService │ RAGService           │ │
 │  └────┬──────────┬──────────────┬───────────────┘   │
 │       │          │              │                    │
 │  ┌────▼──────────▼──────────────▼───────────────┐   │
-│  │              基础设施层                         │   │
-│  │  SQLite  │ 文件系统  │ Embedding模型 │ LLM     │   │
+│  │         Providers 可插拔组件层（抽象接口）       │   │
+│  │  EmbeddingProvider │ VectorStore │ LLM         │   │
+│  │  ├─ LocalEmbedding  │ ├─ ChromaDB │ ├─ OpenAI  │   │
+│  │  └─ OpenAIEmb API   │ └─ Milvus   │ └─ ...     │   │
+│  ├──────────────────────────────────────────────┤   │
+│  │         SQLite  │  文件系统  │  Parser          │   │
 │  └───────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────┘
 ```
+
+**可插拔设计**：所有核心组件基于 LangChain 统一接口，通过 `.env` 配置切换实现，业务代码无需修改：
+
+| 工厂函数 | LangChain 接口 | 当前实现 | 可扩展 |
+|----------|---------------|---------|--------|
+| `create_embeddings()` | `langchain_core.embeddings.Embeddings` | `langchain-huggingface` (本地) | `langchain-openai` (在线 API) |
+| `create_vector_store()` | `langchain_core.vectorstores.VectorStore` | `langchain-chroma` (嵌入式) | `langchain-milvus` / `langchain-faiss` 等 |
+| `create_llm()` | `langchain_core.chat_models.BaseChatModel` | `langchain-openai` ChatOpenAI | 其他 LLM 后端 |
+| `get_parser()` | 自定义 `DocumentParser` | txt/pdf/docx 解析器 | 更多格式扩展 |
 
 **核心流程**：
 
@@ -40,23 +53,24 @@
 | ASGI 服务器 | Uvicorn | >=0.23 | 高性能异步服务器 |
 | 数据库 | SQLite (aiosqlite) | >=0.19 | 轻量、零配置、单文件持久化 |
 | ORM | SQLAlchemy 2.0 | >=2.0 | 异步 ORM，声明式模型 |
+| 智能体框架 | LangChain | >=0.3 | 统一抽象 Embedding / VectorStore / LLM |
 | 文档解析 | python-docx / PyPDF2 | latest | 支持 .txt / .md / .pdf / .docx |
 | 文本分块 | langchain-text-splitters | >=0.3 | 递归字符分块，支持中英文 |
-| 向量嵌入 | sentence-transformers | latest | 嵌入模型加载与推理工具库 |
+| 向量嵌入 | langchain-huggingface | >=0.1 | LangChain 嵌入接口（本地模型） |
 | 嵌入模型 | bge-small-zh-v1.5 | — | 中文语义向量，512 维，轻量本地模型 |
-| 向量存储 | ChromaDB | >=0.4 | 本地嵌入式向量数据库 |
-| LLM | OpenAI 兼容接口 | — | 支持 OpenAI / 本地 Ollama 等 |
+| 向量存储 | langchain-chroma | >=0.1 | LangChain 向量存储接口（ChromaDB） |
+| LLM | langchain-openai | >=0.2 | LangChain LLM 接口（兼容 Ollama） |
 | 配置管理 | pydantic-settings | >=2.0 | .env 文件 + 类型安全的配置 |
 | 文件上传 | python-multipart | >=0.0.6 | 分片上传支持 |
 
 ### 选型理由
 
 - **SQLite**：单机部署无需数据库服务，适合中小规模知识库（<10万文档片段）
-- **ChromaDB**：嵌入式向量数据库，无需独立服务，Python 原生，与 FastAPI 同进程
-- **bge-small-zh-v1.5**：BAAI 开源中文向量模型，512 token 上下文，CPU 可跑，质量和速度平衡好
-- **sentence-transformers**：Hugging Face 生态，模型加载和推理统一接口
-- **langchain-text-splitters**：仅引入分块工具，不依赖完整 langchain 框架，避免过重依赖
-- **OpenAI 兼容接口**：通过 `OPENAI_BASE_URL` 配置，支持 OpenAI、Azure、Ollama 等多种后端
+- **LangChain**：统一抽象层，通过 `langchain-core` 定义的接口实现可插拔组件切换，无需自写抽象基类
+- **ChromaDB**：通过 `langchain-chroma` 接入，嵌入式向量数据库，无需独立服务
+- **bge-small-zh-v1.5**：通过 `langchain-huggingface` 加载，BAAI 开源中文向量模型，CPU 可跑
+- **langchain-text-splitters**：递归字符分块，支持中文分隔符优先级
+- **langchain-openai**：LLM + Embedding 统一接口，通过 `OPENAI_BASE_URL` 兼容 Ollama / Azure 等
 
 ---
 
@@ -69,6 +83,7 @@ backend/
 ├── database.py             # 数据库引擎、会话管理、表初始化
 ├── models.py               # SQLAlchemy ORM 模型（KB、File、Chunk）
 ├── schemas.py              # Pydantic 请求/响应模型
+├── dependencies.py         # FastAPI 依赖注入（DB 会话、Provider 实例）
 ├── requirements.txt        # Python 依赖
 ├── .env.example            # 环境变量示例
 │
@@ -81,16 +96,35 @@ backend/
 ├── services/               # 业务逻辑层
 │   ├── __init__.py
 │   ├── kb_service.py       # 知识库业务逻辑
-│   ├── file_service.py     # 文件上传、合并、管理
-│   ├── embedding_service.py # 向量嵌入（模型加载、文本向量化）
-│   ├── retrieval_service.py # 向量检索（相似度搜索）
-│   └── llm_service.py      # LLM 调用（回答生成）
+│   ├── file_service.py     # 文件上传、合并、处理管道
+│   └── rag_service.py      # RAG 查询（检索 + LLM 生成）
 │
-├── core/                   # 核心处理模块
+├── providers/              # 可插拔组件（抽象接口 + 具体实现）
+│   ├── __init__.py         # 工厂函数（根据配置创建 Provider 实例）
+│   ├── embedding/          # 嵌入模型接口
+│   │   ├── __init__.py
+│   │   ├── base.py         # 抽象基类 EmbeddingProvider
+│   │   ├── local.py        # sentence-transformers 本地模型
+│   │   └── openai_emb.py   # OpenAI 在线嵌入 API
+│   ├── vector_store/       # 向量存储接口
+│   │   ├── __init__.py
+│   │   ├── base.py         # 抽象基类 VectorStoreProvider
+│   │   ├── chroma.py       # ChromaDB 实现
+│   │   └── milvus.py       # Milvus 实现（预留）
+│   ├── llm/                # LLM 接口
+│   │   ├── __init__.py
+│   │   ├── base.py         # 抽象基类 LLMProvider
+│   │   └── openai_llm.py   # OpenAI 兼容实现
+│   └── parser/             # 文档解析接口
+│       ├── __init__.py     # get_parser() 工厂
+│       ├── base.py         # 抽象基类 DocumentParser
+│       ├── txt_parser.py   # .txt / .md
+│       ├── pdf_parser.py   # .pdf
+│       └── docx_parser.py  # .docx
+│
+├── core/                   # 核心工具
 │   ├── __init__.py
-│   ├── parser.py           # 文档解析（txt/md/pdf/docx）
-│   ├── chunker.py          # 文本分块（递归字符分割）
-│   └── vector_store.py     # ChromaDB 向量存储封装
+│   └── chunker.py          # 文本分块（递归字符分割）
 │
 ├── uploads/                # 上传文件存储（gitignore）
 ├── chunks/                 # 临时分片（gitignore）
@@ -427,6 +461,48 @@ OPENAI_API_KEY=ollama
 OPENAI_BASE_URL=http://localhost:11434/v1
 LLM_MODEL=qwen2.5:7b
 ```
+
+---
+
+## 8.5 可插拔组件切换指南
+
+只需 **改 .env 配置 + 安装对应依赖**，业务代码（routers / services）零修改。
+
+### 示例 1：ChromaDB → Milvus
+
+```bash
+# 1. 安装依赖
+pip install langchain-milvus
+
+# 2. 修改 .env
+VECTOR_STORE_PROVIDER=milvus
+MILVUS_HOST=localhost
+MILVUS_PORT=19530
+
+# 3. 在 providers/vector_store/__init__.py 的 milvus 分支中补充实现代码
+```
+
+### 示例 2：本地嵌入模型 → OpenAI 在线嵌入
+
+```bash
+# 1. 安装依赖（已在 requirements.txt 中，取消注释即可）
+pip install langchain-openai
+
+# 2. 修改 .env
+EMBEDDING_PROVIDER=openai
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+```
+
+### 示例 3：LLM 切换到 Ollama 本地模型
+
+```bash
+# 只改 .env，无需额外安装
+OPENAI_BASE_URL=http://localhost:11434/v1
+OPENAI_API_KEY=ollama
+LLM_MODEL=qwen2.5:7b
+```
+
+**原理**：`providers/` 下的工厂函数根据 `.env` 配置返回不同的 LangChain 组件实例，而 `services/` 层只依赖工厂函数，不直接依赖具体实现。
 
 ---
 

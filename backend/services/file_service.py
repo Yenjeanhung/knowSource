@@ -1,0 +1,187 @@
+import asyncio
+import logging
+import shutil
+import uuid
+from pathlib import Path
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from models import File, Chunk
+from config import settings
+from database import async_session
+from providers.embedding import create_embeddings
+from providers.vector_store import create_vector_store
+from providers.parser import get_parser
+from core.chunker import split_text
+
+logger = logging.getLogger(__name__)
+
+UPLOAD_DIR = Path(settings.UPLOAD_DIR)
+CHUNK_DIR = Path(settings.CHUNK_DIR)
+
+
+class FileService:
+
+    @staticmethod
+    async def upload_chunk(
+        db: AsyncSession,
+        file_id: str, file_name: str, file_size: int,
+        kb_id: str, chunk_index: int, total_chunks: int,
+        chunk_data,
+    ) -> dict:
+        # 首个分片时创建文件记录
+        file = await db.get(File, file_id)
+        if not file:
+            file = File(
+                id=file_id, kb_id=kb_id, name=file_name,
+                size=file_size, total_chunks=total_chunks,
+            )
+            db.add(file)
+            await db.commit()
+
+        # 保存分片到临时文件
+        chunk_path = CHUNK_DIR / f"{file_id}_{chunk_index:06d}"
+        with open(chunk_path, "wb") as f:
+            shutil.copyfileobj(chunk_data, f)
+
+        # 统计已接收分片数
+        received = len(list(CHUNK_DIR.glob(f"{file_id}_*")))
+
+        # 全部分片到达 → 合并 + 后台处理
+        if received == total_chunks:
+            await FileService._reassemble(file_id, file, db)
+            asyncio.create_task(FileService._process_file_bg(file_id))
+
+        return {"status": "ok", "chunk_index": chunk_index, "received": received}
+
+    @staticmethod
+    async def _reassemble(file_id: str, file: File, db: AsyncSession):
+        kb_dir = UPLOAD_DIR / file.kb_id
+        kb_dir.mkdir(exist_ok=True)
+        target_path = kb_dir / file.name
+
+        chunk_files = sorted(CHUNK_DIR.glob(f"{file_id}_*"))
+        with open(target_path, "wb") as out:
+            for cp in chunk_files:
+                with open(cp, "rb") as cin:
+                    out.write(cin.read())
+                cp.unlink()
+
+        file.path = str(target_path)
+        file.status = "processing"
+        await db.commit()
+
+    @staticmethod
+    async def _process_file_bg(file_id: str):
+        """后台任务：解析 → 分块 → 向量化 → 存储。"""
+        async with async_session() as db:
+            try:
+                file = await db.get(File, file_id)
+                if not file or not file.path:
+                    return
+
+                file_path = Path(file.path)
+
+                # 1. 解析文档
+                parser = get_parser(file_path)
+                result = parser.parse(file_path)
+
+                # 2. 文本分块
+                text_chunks = split_text(result.content)
+                if not text_chunks:
+                    file.status = "indexed"
+                    await db.commit()
+                    return
+
+                # 3. 构建 LangChain Documents
+                from langchain_core.documents import Document
+                docs = [
+                    Document(
+                        page_content=c["content"],
+                        metadata={
+                            "file_id": file_id,
+                            "file_name": file.name,
+                            "chunk_index": c["index"],
+                        },
+                    )
+                    for c in text_chunks
+                ]
+
+                # 4. 写入向量库（自动嵌入）
+                embeddings = create_embeddings()
+                vectorstore = create_vector_store(file.kb_id, embeddings)
+                chunk_ids = [f"{file_id}_{i}" for i in range(len(docs))]
+                await asyncio.to_thread(
+                    vectorstore.add_documents, docs, ids=chunk_ids
+                )
+
+                # 5. 保存分块记录到 SQLite
+                for i, chunk in enumerate(text_chunks):
+                    db_chunk = Chunk(
+                        id=chunk_ids[i],
+                        file_id=file_id,
+                        content=chunk["content"],
+                        chunk_index=chunk["index"],
+                        embedding_id=chunk_ids[i],
+                    )
+                    db.add(db_chunk)
+
+                file.status = "indexed"
+                await db.commit()
+
+            except Exception as e:
+                logger.error(f"处理文件失败 {file_id}: {e}")
+                try:
+                    file = await db.get(File, file_id)
+                    if file:
+                        file.status = "failed"
+                        await db.commit()
+                except Exception:
+                    pass
+
+    @staticmethod
+    async def list_all(db: AsyncSession) -> list[dict]:
+        result = await db.execute(select(File))
+        files = result.scalars().all()
+        return [
+            {"id": f.id, "name": f.name, "size": f.size,
+             "kb_id": f.kb_id, "status": f.status}
+            for f in files
+        ]
+
+    @staticmethod
+    async def delete(db: AsyncSession, file_id: str) -> bool:
+        file = await db.get(File, file_id)
+        if not file:
+            return False
+
+        # 从向量库中删除
+        embeddings = create_embeddings()
+        chunks = (await db.execute(
+            select(Chunk).where(Chunk.file_id == file_id)
+        )).scalars().all()
+
+        if chunks:
+            try:
+                vs = create_vector_store(file.kb_id, embeddings)
+                await asyncio.to_thread(
+                    vs.delete, ids=[c.embedding_id for c in chunks if c.embedding_id]
+                )
+            except Exception:
+                pass
+
+        # 删除磁盘文件
+        if file.path:
+            fp = Path(file.path)
+            if fp.exists():
+                fp.unlink()
+
+        # 清理临时分片
+        for cp in CHUNK_DIR.glob(f"{file_id}_*"):
+            cp.unlink()
+
+        # 删除数据库记录（级联删除 chunks）
+        await db.delete(file)
+        await db.commit()
+        return True
