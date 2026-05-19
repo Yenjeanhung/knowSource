@@ -145,8 +145,6 @@ const uploadedCount = () => files.value.filter(f => f.status === 'uploaded').len
         </svg>
       </button>
       <h2>{{ kb?.name || '...' }}</h2>
-      <div class="flex-1"></div>
-      <button class="btn danger sm" @click="emit('deleted')">删除知识库</button>
     </div>
 
     <!-- Upload Zone -->
