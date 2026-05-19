@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -14,4 +15,11 @@ async def query_rag(req: QueryRequest, db: AsyncSession = Depends(get_db)):
     kb = await KBService.get(db, req.kb_id)
     if not kb:
         raise HTTPException(404, "Knowledge base not found")
-    return await RAGService.query(db, req.kb_id, req.query, req.top_k)
+    return StreamingResponse(
+        RAGService.query_stream(req.kb_id, req.query, req.top_k),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

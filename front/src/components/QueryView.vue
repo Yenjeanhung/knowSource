@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { fetchKbs, queryRag } from '../api'
+import { ref, computed, onMounted, nextTick } from 'vue'
+import { fetchKbs, queryRagStream } from '../api'
 
 const kbs = ref([])
 const queryKbId = ref('')
@@ -22,9 +22,12 @@ async function runQuery() {
   answer.value = ''
   chunks.value = []
   try {
-    const data = await queryRag(queryKbId.value, q)
-    answer.value = data.answer || ''
-    chunks.value = data.chunks || []
+    await queryRagStream(queryKbId.value, q, {
+      onChunks(data) { chunks.value = data },
+      onToken(token) {
+        answer.value += token
+      },
+    })
   } catch (err) {
     answer.value = `Error: ${err.message}`
   }
@@ -64,7 +67,7 @@ onMounted(loadKbs)
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/></svg>
           Answer
         </h4>
-        <div class="answer-text">{{ answer }}</div>
+        <div class="answer-text">{{ answer }}<span class="cursor" v-if="querying">|</span></div>
       </div>
 
       <div v-for="(c, i) in chunks" :key="i" class="chunk-item">
@@ -97,6 +100,13 @@ onMounted(loadKbs)
 .answer-card { border: 1px solid var(--c-border); border-radius: var(--radius); padding: 14px 16px; }
 .answer-card h4 { font-size: 13px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; color: var(--c-secondary); }
 .answer-card .answer-text { font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+
+.cursor {
+  animation: blink 0.7s step-end infinite;
+  font-weight: 100;
+  color: var(--c-secondary);
+}
+@keyframes blink { 50% { opacity: 0; } }
 
 .chunk-item { border: 1px solid var(--c-border); border-radius: var(--radius); padding: 12px 14px; font-size: 13px; }
 .chunk-header { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px; color: var(--c-secondary); }
