@@ -22,14 +22,14 @@ async function create() {
 <template>
   <div class="modal-mask" @click.self="emit('close')">
     <div class="modal" @click.stop>
-      <h3>New Knowledge Base</h3>
+      <h3>新建知识库</h3>
       <div class="field">
-        <label>Name</label>
-        <input type="text" v-model="name" placeholder="e.g. Project Docs" @keydown.enter="create" autofocus>
+        <label>名称</label>
+        <input type="text" v-model="name" placeholder="例如：项目文档" @keydown.enter="create" autofocus>
       </div>
       <div class="actions">
-        <button class="btn" @click="emit('close')">Cancel</button>
-        <button class="btn primary" @click="create" :disabled="!name.trim() || creating">{{ creating ? 'Creating...' : 'Create' }}</button>
+        <button class="btn" @click="emit('close')">取消</button>
+        <button class="btn primary" @click="create" :disabled="!name.trim() || creating">{{ creating ? '创建中...' : '创建' }}</button>
       </div>
     </div>
   </div>

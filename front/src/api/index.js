@@ -22,6 +22,16 @@ export async function deleteKb(kbId) {
   await fetch(`${API}/api/kb/${kbId}`, { method: 'DELETE' })
 }
 
+export async function updateKb(kbId, { name, description }) {
+  const res = await fetch(`${API}/api/kb/${kbId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, description }),
+  })
+  if (!res.ok) throw new Error('Update failed')
+  return res.json()
+}
+
 export async function deleteFile(fileId) {
   await fetch(`${API}/api/files/${fileId}`, { method: 'DELETE' })
 }

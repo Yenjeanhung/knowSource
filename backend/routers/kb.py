@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from schemas import CreateKBRequest
+from schemas import CreateKBRequest, UpdateKBRequest
 from services.kb_service import KBService
 
 router = APIRouter()
@@ -21,6 +21,14 @@ async def list_kbs(db: AsyncSession = Depends(get_db)):
 @router.get("/kb/{kb_id}")
 async def get_kb(kb_id: str, db: AsyncSession = Depends(get_db)):
     kb = await KBService.get(db, kb_id)
+    if not kb:
+        raise HTTPException(404, "Knowledge base not found")
+    return kb
+
+
+@router.put("/kb/{kb_id}")
+async def update_kb(kb_id: str, req: UpdateKBRequest, db: AsyncSession = Depends(get_db)):
+    kb = await KBService.update(db, kb_id, req.name, req.description)
     if not kb:
         raise HTTPException(404, "Knowledge base not found")
     return kb

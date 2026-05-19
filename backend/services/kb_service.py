@@ -26,8 +26,12 @@ class KBService:
         )
         kbs = result.scalars().all()
         return [
-            {"id": kb.id, "name": kb.name, "created_at": kb.created_at,
-             "file_count": len(kb.files)}
+            {"id": kb.id, "name": kb.name, "description": kb.description,
+             "created_at": kb.created_at, "file_count": len(kb.files),
+             "file_types": sorted(set(
+                 Path(f.name).suffix.lower().lstrip(".")
+                 for f in kb.files if f.name
+             ))}
             for kb in kbs
         ]
 
@@ -42,13 +46,28 @@ class KBService:
         if not kb:
             return None
         files = [
-            {"id": f.id, "name": f.name, "size": f.size, "status": f.status, "progress": f.progress}
+            {"id": f.id, "name": f.name, "size": f.size, "status": f.status, "progress": f.progress, "message": f.message}
             for f in kb.files
         ]
         return {
-            "id": kb.id, "name": kb.name, "created_at": kb.created_at,
+            "id": kb.id, "name": kb.name, "description": kb.description, "created_at": kb.created_at,
             "file_count": len(kb.files), "files": files,
         }
+
+    @staticmethod
+    async def update(db: AsyncSession, kb_id: str, name: str | None, description: str | None) -> dict | None:
+        result = await db.execute(
+            select(KnowledgeBase).where(KnowledgeBase.id == kb_id)
+        )
+        kb = result.scalar_one_or_none()
+        if not kb:
+            return None
+        if name is not None:
+            kb.name = name.strip()
+        if description is not None:
+            kb.description = description.strip()
+        await db.commit()
+        return {"id": kb.id, "name": kb.name, "description": kb.description}
 
     @staticmethod
     async def delete(db: AsyncSession, kb_id: str) -> bool:

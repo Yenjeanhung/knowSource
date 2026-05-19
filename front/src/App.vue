@@ -50,8 +50,8 @@ async function deleteKb(kbId) {
 
     <!-- Tabs -->
     <div class="tabs">
-      <button class="tab" :class="{ active: tab === 'kb' }" @click="switchToKb">Knowledge Base</button>
-      <button class="tab" :class="{ active: tab === 'query' }" @click="tab = 'query'">Query</button>
+      <button class="tab" :class="{ active: tab === 'kb' }" @click="switchToKb">知识库</button>
+      <button class="tab" :class="{ active: tab === 'query' }" @click="tab = 'query'">问答</button>
     </div>
 
     <!-- KB Tab -->

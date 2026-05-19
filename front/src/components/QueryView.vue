@@ -91,18 +91,18 @@ onMounted(loadKbs)
 <template>
   <div class="query-section">
     <div class="kb-select">
-      <label>Knowledge Base</label>
+      <label>选择知识库</label>
       <select v-model="queryKbId">
-        <option value="" disabled>Select a knowledge base...</option>
-        <option v-for="kb in queryKbList" :key="kb.id" :value="kb.id">{{ kb.name }} ({{ kb.file_count }} files)</option>
+        <option value="" disabled>请选择知识库...</option>
+        <option v-for="kb in queryKbList" :key="kb.id" :value="kb.id">{{ kb.name }} ({{ kb.file_count }} 个文件)</option>
       </select>
     </div>
 
     <div class="query-row">
-      <input type="text" v-model="queryText" placeholder="Ask a question..." @keydown.enter="runQuery" :disabled="!queryKbId || querying">
+      <input type="text" v-model="queryText" placeholder="输入问题..." @keydown.enter="runQuery" :disabled="!queryKbId || querying">
       <button class="btn primary" @click="runQuery" :disabled="!queryKbId || !queryText.trim() || querying">
         <span class="spinner" v-if="querying"></span>
-        <template v-else>Search</template>
+        <template v-else>搜索</template>
       </button>
     </div>
 
@@ -125,7 +125,7 @@ onMounted(loadKbs)
           <div class="answer-card" ref="answerBoxRef" v-if="answerExThink" :class="{ streaming: querying }">
             <h4>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/></svg>
-              Answer
+              回答
             </h4>
             <div class="answer-text" :style="{ maxHeight: answerMaxH }">
               <div class="markdown-body" v-html="renderMd(answerExThink)"></div>
@@ -135,7 +135,7 @@ onMounted(loadKbs)
           <div class="answer-card" ref="answerBoxRef" v-if="!answerExThink && answerRaw" :class="{ streaming: querying }">
             <h4>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/></svg>
-              Answer
+              回答
             </h4>
             <div class="answer-text" :style="{ maxHeight: answerMaxH }">
               <div class="markdown-body" v-html="renderMd(answerRaw)"></div>
@@ -147,7 +147,7 @@ onMounted(loadKbs)
         <div class="sources-col" v-if="chunks.length">
           <div class="sources-header">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-            Sources · {{ chunks.length }}
+            来源 · {{ chunks.length }}
           </div>
           <div class="sources-scroll">
             <div

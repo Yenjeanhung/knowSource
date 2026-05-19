@@ -22,6 +22,8 @@ async def init_db():
         columns = [row[1] for row in result]
         if "progress" not in columns:
             await conn.execute(text("ALTER TABLE files ADD COLUMN progress INTEGER DEFAULT 0"))
+        if "message" not in columns:
+            await conn.execute(text("ALTER TABLE files ADD COLUMN message VARCHAR DEFAULT NULL"))
 
 
 async def get_db() -> AsyncSession:

@@ -84,7 +84,7 @@ class FileService:
         file = await db.get(File, file_id)
         if not file:
             return None
-        return {"status": file.status, "progress": file.progress}
+        return {"status": file.status, "progress": file.progress, "message": file.message}
 
     @staticmethod
     async def _process_file_bg(file_id: str):
@@ -109,9 +109,10 @@ class FileService:
 
                 text_chunks = split_text(result.content)
                 if not text_chunks:
-                    file.status = "indexed"
-                    file.progress = 100
+                    file.status = "failed"
+                    file.message = "文档内容为空，可能为扫描版 PDF（不支持图片/扫描格式）"
                     await db.commit()
+                    logger.warning(f"文件 {file_id} 解析内容为空，可能为扫描版 PDF")
                     return
 
                 total = len(text_chunks)
@@ -165,6 +166,7 @@ class FileService:
                     file = await db.get(File, file_id)
                     if file:
                         file.status = "failed"
+                        file.message = str(e)[:200]
                         await db.commit()
                 except Exception:
                     pass
@@ -175,7 +177,8 @@ class FileService:
         files = result.scalars().all()
         return [
             {"id": f.id, "name": f.name, "size": f.size,
-             "kb_id": f.kb_id, "status": f.status, "progress": f.progress}
+             "kb_id": f.kb_id, "status": f.status, "progress": f.progress,
+             "message": f.message}
             for f in files
         ]
 
