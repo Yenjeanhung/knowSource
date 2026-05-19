@@ -1,0 +1,9 @@
+RAG (Retrieval-Augmented Generation) is a technique that enhances LLM outputs by retrieving relevant documents before generating answers.
+
+The RAG pipeline consists of three main stages:
+1. Indexing: Documents are split into chunks and embedded into vector representations.
+2. Retrieval: Given a query, the system finds the most semantically similar chunks.
+3. Generation: Retrieved chunks are fed as context to an LLM for answer synthesis.
+
+Vector embeddings enable semantic search across document collections.
+MiniRAG supports chunked file uploads for efficient handling of large documents.

@@ -4,831 +4,575 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MiniRAG</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lucide-static@0.460.0/font/lucide.min.css">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap');
-
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --color-primary: #171717;
-    --color-on-primary: #FFFFFF;
-    --color-secondary: #404040;
-    --color-accent: #A16207;
-    --color-background: #FFFFFF;
-    --color-foreground: #171717;
-    --color-muted: #E8ECF0;
-    --color-muted-hover: #DDE1E6;
-    --color-border: #E5E5E5;
-    --color-destructive: #DC2626;
-    --color-ring: #171717;
+    --c-bg: #FFFFFF;
+    --c-fg: #171717;
+    --c-secondary: #737373;
+    --c-muted: #F5F5F5;
+    --c-muted-hover: #EDEDED;
+    --c-border: #E5E5E5;
+    --c-accent: #A16207;
+    --c-danger: #DC2626;
+    --c-success: #16A34A;
     --radius: 8px;
-    --radius-sm: 4px;
-    --transition: 150ms ease;
+    --radius-sm: 6px;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
   }
 
   body {
-    font-family: 'Atkinson Hyperlegible', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: var(--color-background);
-    color: var(--color-foreground);
+    font-family: var(--font);
+    background: var(--c-bg);
+    color: var(--c-fg);
     line-height: 1.5;
     min-height: 100dvh;
   }
 
-  .app {
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 24px 20px 40px;
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-  }
+  /* ─── Layout ────────────────────────────── */
+  .shell { max-width: 640px; margin: 0 auto; padding: 0 20px; min-height: 100dvh; display: flex; flex-direction: column; }
 
-  /* Header */
-  .header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding-bottom: 16px;
-  }
-  .header svg { flex-shrink: 0; }
-  .header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
-  .header .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); }
+  /* ─── Header ────────────────────────────── */
+  .header { display: flex; align-items: center; gap: 10px; padding: 20px 0 16px; border-bottom: 1px solid var(--c-border); margin-bottom: 24px; }
+  .header .logo { display: flex; align-items: center; gap: 8px; }
+  .header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+  .header .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--c-accent); }
+  .header .spacer { flex: 1; }
 
-  /* Tab Bar */
-  .tab-bar {
-    display: flex;
-    gap: 0;
-    border-bottom: 2px solid var(--color-border);
-    margin-bottom: 24px;
-  }
-  .tab-btn {
-    padding: 10px 20px;
+  /* ─── Tabs ──────────────────────────────── */
+  .tabs { display: flex; gap: 0; margin-bottom: 24px; }
+  .tab {
+    padding: 8px 0;
+    margin-right: 24px;
     font-size: 14px;
-    font-weight: 700;
-    font-family: inherit;
-    background: none;
+    font-weight: 500;
+    color: var(--c-secondary);
+    cursor: pointer;
     border: none;
+    background: none;
     border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
-    cursor: pointer;
-    color: var(--color-secondary);
-    transition: color var(--transition), border-color var(--transition);
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    transition: color 150ms, border-color 150ms;
+    font-family: var(--font);
   }
-  .tab-btn:hover { color: var(--color-foreground); }
-  .tab-btn.active {
-    color: var(--color-foreground);
-    border-bottom-color: var(--color-primary);
+  .tab:hover { color: var(--c-fg); }
+  .tab.active { color: var(--c-fg); border-bottom-color: var(--c-fg); font-weight: 700; }
+
+  /* ─── Shared ────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border: 1px solid var(--c-border); border-radius: var(--radius-sm);
+    font-size: 13px; font-weight: 600; font-family: var(--font);
+    cursor: pointer; background: var(--c-bg); color: var(--c-fg);
+    transition: background 150ms, border-color 150ms, transform 100ms;
   }
-  .tab-btn .tab-icon { flex-shrink: 0; }
+  .btn:hover { background: var(--c-muted); }
+  .btn:active { transform: scale(0.97); }
+  .btn.primary { background: var(--c-fg); color: #fff; border-color: var(--c-fg); }
+  .btn.primary:hover { opacity: 0.85; background: var(--c-fg); }
+  .btn.danger { color: var(--c-danger); }
+  .btn.danger:hover { background: #FEF2F2; border-color: var(--c-danger); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  .btn .icon { font-size: 15px; }
 
-  /* Tab content panels */
-  .tab-panel { display: none; }
-  .tab-panel.active { display: flex; flex-direction: column; gap: 20px; }
-
-  /* KB List */
-  .kb-list { display: flex; flex-direction: column; gap: 8px; }
-
-  .kb-card {
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    overflow: hidden;
-    transition: border-color var(--transition);
+  input[type="text"] {
+    padding: 8px 12px; border: 1px solid var(--c-border); border-radius: var(--radius-sm);
+    font-size: 14px; font-family: var(--font); outline: none;
+    transition: border-color 150ms; width: 100%;
   }
-  .kb-card.expanded { border-color: var(--color-primary); }
+  input[type="text"]:focus { border-color: var(--c-fg); }
+  input[type="text"]::placeholder { color: #B0B0B0; }
 
-  .kb-card-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 14px;
-    cursor: pointer;
-    transition: background var(--transition);
-    user-select: none;
+  .section-title { font-size: 13px; font-weight: 700; color: var(--c-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+
+  /* ─── KB List View ──────────────────────── */
+  .kb-toolbar { display: flex; gap: 8px; margin-bottom: 16px; }
+  .kb-toolbar input { flex: 1; }
+
+  .kb-list { display: flex; flex-direction: column; gap: 4px; }
+  .kb-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; border-radius: var(--radius-sm);
+    cursor: pointer; transition: background 150ms;
+    border: 1px solid transparent;
   }
-  .kb-card-header:hover { background: var(--color-muted); }
+  .kb-item:hover { background: var(--c-muted); }
+  .kb-item.selected { background: var(--c-muted); border-color: var(--c-border); }
+  .kb-item .kb-icon { color: var(--c-secondary); flex-shrink: 0; }
+  .kb-item .kb-info { flex: 1; min-width: 0; }
+  .kb-item .kb-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kb-item .kb-meta { font-size: 12px; color: var(--c-secondary); }
+  .kb-item .kb-count { font-size: 12px; color: var(--c-secondary); background: var(--c-muted); padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
+  .kb-item .kb-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 150ms; }
+  .kb-item:hover .kb-actions { opacity: 1; }
 
-  .kb-card-header .kb-icon { flex-shrink: 0; color: var(--color-accent); }
-  .kb-card-header .kb-info { flex: 1; min-width: 0; }
-  .kb-card-header .kb-name { font-size: 15px; font-weight: 700; }
-  .kb-card-header .kb-meta { font-size: 12px; color: var(--color-secondary); }
-  .kb-card-header .kb-chevron {
-    flex-shrink: 0;
-    color: var(--color-secondary);
-    transition: transform var(--transition);
-    transform: rotate(-90deg);
-  }
-  .kb-card.expanded .kb-chevron { transform: rotate(0deg); }
+  .empty-state { text-align: center; padding: 48px 20px; color: var(--c-secondary); }
+  .empty-state .icon { font-size: 32px; margin-bottom: 12px; color: var(--c-border); }
+  .empty-state .title { font-size: 15px; font-weight: 700; color: var(--c-fg); margin-bottom: 4px; }
+  .empty-state .desc { font-size: 13px; }
 
-  .kb-card-header .kb-delete {
-    flex-shrink: 0;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--color-secondary);
-    padding: 4px;
-    border-radius: var(--radius-sm);
-    display: flex;
-    align-items: center;
-    transition: color var(--transition);
-  }
-  .kb-card-header .kb-delete:hover { color: var(--color-destructive); }
+  /* ─── KB Detail View ────────────────────── */
+  .detail-header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+  .detail-header .back { cursor: pointer; color: var(--c-secondary); display: flex; align-items: center; transition: color 150ms; background: none; border: none; padding: 4px; }
+  .detail-header .back:hover { color: var(--c-fg); }
+  .detail-header h2 { font-size: 16px; font-weight: 700; flex: 1; }
+  .detail-header .kb-date { font-size: 12px; color: var(--c-secondary); }
 
-  /* KB Detail (file list inside expanded KB) */
-  .kb-detail {
-    display: none;
-    border-top: 1px solid var(--color-border);
-    padding: 14px;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .kb-card.expanded .kb-detail { display: flex; }
-
-  /* Upload Zone (inside KB) */
   .upload-zone {
-    border: 2px dashed var(--color-border);
-    border-radius: var(--radius);
-    padding: 20px;
-    text-align: center;
-    cursor: pointer;
-    transition: border-color var(--transition), background var(--transition);
-    background: var(--color-muted);
+    border: 1.5px dashed var(--c-border); border-radius: var(--radius);
+    padding: 24px; text-align: center; cursor: pointer;
+    background: var(--c-muted); transition: border-color 150ms, background 150ms;
+    margin-bottom: 16px;
   }
-  .upload-zone:hover, .upload-zone.drag-over {
-    border-color: var(--color-primary);
-    background: var(--color-muted-hover);
-  }
-  .upload-zone svg { display: block; margin: 0 auto 6px; color: var(--color-secondary); }
-  .upload-zone .label { font-size: 14px; font-weight: 700; }
-  .upload-zone .hint { font-size: 12px; color: var(--color-secondary); margin-top: 2px; }
+  .upload-zone:hover, .upload-zone.drag-over { border-color: var(--c-fg); background: var(--c-muted-hover); }
+  .upload-zone .icon { font-size: 22px; color: var(--c-secondary); margin-bottom: 6px; }
+  .upload-zone .label { font-size: 14px; font-weight: 600; }
+  .upload-zone .hint { font-size: 12px; color: var(--c-secondary); margin-top: 2px; }
   .upload-zone input[type="file"] { display: none; }
 
-  /* File Items */
-  .file-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    background: var(--color-muted);
-    border-radius: var(--radius-sm);
-    font-size: 14px;
-    transition: background var(--transition);
+  .file-list { display: flex; flex-direction: column; gap: 3px; }
+  .file-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: var(--radius-sm); font-size: 13px;
+    transition: background 150ms;
   }
-  .file-item:hover { background: var(--color-muted-hover); }
-  .file-item .file-icon { flex-shrink: 0; color: var(--color-secondary); }
-  .file-item .file-info { flex: 1; min-width: 0; }
-  .file-item .file-name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .file-item .file-meta { font-size: 12px; color: var(--color-secondary); }
-  .file-item .file-status { flex-shrink: 0; font-size: 12px; }
-  .file-item .file-status.uploading { color: var(--color-accent); }
-  .file-item .file-status.done { color: #16a34a; }
-  .file-item .file-status.error { color: var(--color-destructive); }
+  .file-row:hover { background: var(--c-muted); }
+  .file-row .file-icon { color: var(--c-secondary); flex-shrink: 0; font-size: 15px; }
+  .file-row .file-name { flex: 1; min-width: 0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file-row .file-meta { font-size: 12px; color: var(--c-secondary); flex-shrink: 0; }
+  .file-row .file-status { font-size: 12px; flex-shrink: 0; }
+  .file-row .file-status.done { color: var(--c-success); }
+  .file-row .file-status.uploading { color: var(--c-accent); }
+  .file-row .file-status.error { color: var(--c-danger); }
+  .file-row .progress-track { width: 60px; height: 3px; background: var(--c-border); border-radius: 2px; overflow: hidden; flex-shrink: 0; }
+  .file-row .progress-fill { height: 100%; background: var(--c-fg); border-radius: 2px; transition: width 200ms; }
+  .file-row .del-btn {
+    background: none; border: none; cursor: pointer; color: var(--c-secondary);
+    padding: 2px; border-radius: 3px; display: flex; align-items: center;
+    transition: color 150ms; font-size: 14px; flex-shrink: 0;
+  }
+  .file-row .del-btn:hover { color: var(--c-danger); }
 
-  .progress-bar {
-    width: 100%;
-    height: 3px;
-    background: var(--color-border);
-    border-radius: 2px;
-    margin-top: 4px;
-    overflow: hidden;
-    display: none;
+  /* ─── Query View ────────────────────────── */
+  .query-section { display: flex; flex-direction: column; gap: 16px; }
+  .kb-select { display: flex; flex-direction: column; gap: 6px; }
+  .kb-select label { font-size: 13px; font-weight: 600; color: var(--c-secondary); }
+  .kb-select select {
+    padding: 8px 12px; border: 1px solid var(--c-border); border-radius: var(--radius-sm);
+    font-size: 14px; font-family: var(--font); outline: none; background: var(--c-bg);
+    transition: border-color 150ms; cursor: pointer; appearance: auto;
   }
-  .progress-bar.active { display: block; }
-  .progress-bar .fill {
-    height: 100%;
-    background: var(--color-primary);
-    border-radius: 2px;
-    transition: width 200ms ease;
-    width: 0%;
-  }
-
-  .file-item .remove-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--color-secondary);
-    padding: 2px;
-    border-radius: var(--radius-sm);
-    display: flex;
-    align-items: center;
-    transition: color var(--transition), background var(--transition);
-  }
-  .file-item .remove-btn:hover { color: var(--color-destructive); }
-
-  /* Create KB */
-  .create-kb-row {
-    display: flex;
-    gap: 8px;
-  }
-  .create-kb-row input {
-    flex: 1;
-    padding: 10px 14px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    font-size: 14px;
-    font-family: inherit;
-    outline: none;
-    transition: border-color var(--transition);
-  }
-  .create-kb-row input:focus { border-color: var(--color-primary); }
-  .create-kb-row button {
-    padding: 10px 20px;
-    background: var(--color-primary);
-    color: var(--color-on-primary);
-    border: none;
-    border-radius: var(--radius);
-    font-size: 14px;
-    font-weight: 700;
-    font-family: inherit;
-    cursor: pointer;
-    transition: opacity var(--transition), transform var(--transition);
-    white-space: nowrap;
-  }
-  .create-kb-row button:hover { opacity: 0.85; }
-  .create-kb-row button:active { transform: scale(0.97); }
-  .create-kb-row button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-
-  /* Q&A */
-  .qa-select-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .qa-select-row select {
-    flex: 1;
-    padding: 10px 14px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    font-size: 14px;
-    font-family: inherit;
-    background: var(--color-background);
-    outline: none;
-    cursor: pointer;
-    transition: border-color var(--transition);
-  }
-  .qa-select-row select:focus { border-color: var(--color-primary); }
+  .kb-select select:focus { border-color: var(--c-fg); }
 
   .query-row { display: flex; gap: 8px; }
-  .query-row input {
-    flex: 1;
-    padding: 10px 14px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    font-size: 14px;
-    font-family: inherit;
-    outline: none;
-    transition: border-color var(--transition);
-  }
-  .query-row input:focus { border-color: var(--color-primary); }
-  .query-row button {
-    padding: 10px 20px;
-    background: var(--color-primary);
-    color: var(--color-on-primary);
-    border: none;
-    border-radius: var(--radius);
-    font-size: 14px;
-    font-weight: 700;
-    font-family: inherit;
-    cursor: pointer;
-    transition: opacity var(--transition), transform var(--transition);
-    white-space: nowrap;
-  }
-  .query-row button:hover { opacity: 0.85; }
-  .query-row button:active { transform: scale(0.97); }
-  .query-row button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .query-row input { flex: 1; }
+  .query-row button { white-space: nowrap; }
 
-  /* Results */
-  .results { display: flex; flex-direction: column; gap: 16px; }
-  .results-header { display: none; font-size: 13px; color: var(--color-secondary); }
-  .results-header.visible { display: flex; align-items: center; gap: 8px; }
-
-  .answer-card {
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    padding: 16px;
-    display: none;
-  }
-  .answer-card.visible { display: block; }
-  .answer-card h4 { font-size: 14px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
-  .answer-card .answer-text { font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
-
-  .chunks-list { display: flex; flex-direction: column; gap: 8px; }
-  .chunk-item {
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    padding: 12px 14px;
-    font-size: 13px;
-    display: none;
-  }
-  .chunk-item.visible { display: block; }
-  .chunk-item .chunk-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 6px;
-    font-size: 12px;
-    color: var(--color-secondary);
-  }
-  .chunk-item .chunk-score { font-weight: 700; color: var(--color-accent); }
-  .chunk-item .chunk-text { font-size: 13px; line-height: 1.6; color: var(--color-foreground); }
-
-  /* Loading */
-  .spinner {
-    display: none;
-    width: 18px;
-    height: 18px;
-    border: 2px solid var(--color-border);
-    border-top-color: var(--color-primary);
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-  }
-  .spinner.active { display: inline-block; }
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--c-border); border-top-color: var(--c-fg); border-radius: 50%; animation: spin 0.6s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* Empty State */
-  .empty {
-    text-align: center;
-    padding: 40px 20px;
-    color: var(--color-secondary);
-  }
-  .empty svg { margin-bottom: 12px; color: var(--color-border); }
-  .empty .title { font-size: 15px; font-weight: 700; color: var(--color-foreground); margin-bottom: 4px; }
-  .empty .desc { font-size: 13px; }
+  .loading-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--c-secondary); }
 
+  .results { display: flex; flex-direction: column; gap: 12px; }
+  .results-header { font-size: 13px; color: var(--c-secondary); display: flex; align-items: center; gap: 6px; }
+  .answer-card { border: 1px solid var(--c-border); border-radius: var(--radius); padding: 14px 16px; }
+  .answer-card h4 { font-size: 13px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; color: var(--c-secondary); }
+  .answer-card .answer-text { font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+
+  .chunk-item { border: 1px solid var(--c-border); border-radius: var(--radius); padding: 12px 14px; font-size: 13px; }
+  .chunk-item .chunk-header { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px; color: var(--c-secondary); }
+  .chunk-item .chunk-score { font-weight: 700; color: var(--c-accent); }
+  .chunk-item .chunk-text { line-height: 1.6; }
+
+  /* ─── Modal ─────────────────────────────── */
+  .modal-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.3);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; animation: fadeIn 150ms;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .modal {
+    background: var(--c-bg); border-radius: var(--radius); padding: 24px;
+    width: 360px; max-width: 90vw; box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+  }
+  .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+  .modal .field { margin-bottom: 16px; }
+  .modal .field label { display: block; font-size: 13px; font-weight: 600; color: var(--c-secondary); margin-bottom: 6px; }
+  .modal .actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+  /* ─── Responsive ────────────────────────── */
   @media (max-width: 480px) {
-    .app { padding: 16px 14px 32px; }
-    .tab-btn { padding: 10px 14px; font-size: 13px; }
-    .create-kb-row { flex-direction: column; }
-    .create-kb-row button { width: 100%; }
+    .shell { padding: 0 14px; }
+    .header { padding: 16px 0 12px; margin-bottom: 16px; }
     .query-row { flex-direction: column; }
-    .query-row button { width: 100%; }
-    .qa-select-row { flex-direction: column; align-items: stretch; }
+    .query-row .btn { width: 100%; justify-content: center; }
   }
 </style>
 </head>
 <body>
-<div class="app">
-  <!-- Header -->
-  <header class="header">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="2" y="2" width="20" height="20" rx="4"/>
-      <line x1="8" y1="8" x2="16" y2="8"/>
-      <line x1="8" y1="12" x2="16" y2="12"/>
-      <line x1="8" y1="16" x2="12" y2="16"/>
-    </svg>
-    <h1>MiniRAG</h1>
-    <div class="dot"></div>
-  </header>
+<div id="app"></div>
 
-  <!-- Tab Bar -->
-  <nav class="tab-bar">
-    <button class="tab-btn active" data-tab="kb">
-      <svg class="tab-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-      </svg>
-      知识库
-    </button>
-    <button class="tab-btn" data-tab="qa">
-      <svg class="tab-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="11" cy="11" r="8"/>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-      </svg>
-      问答
-    </button>
-  </nav>
-
-  <!-- Tab: Knowledge Bases -->
-  <div class="tab-panel active" id="panel-kb">
-    <!-- Create KB -->
-    <div class="create-kb-row">
-      <input type="text" id="kbNameInput" placeholder="New knowledge base name..." maxlength="50">
-      <button id="createKbBtn">Create</button>
-    </div>
-
-    <!-- KB List -->
-    <div class="kb-list" id="kbList">
-      <div class="empty" id="emptyKb">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-        </svg>
-        <div class="title">No knowledge bases</div>
-        <div class="desc">Create a knowledge base and upload documents</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Tab: Q&A -->
-  <div class="tab-panel" id="panel-qa">
-    <!-- KB Selector -->
-    <div class="qa-select-row">
-      <select id="kbSelect" disabled>
-        <option value="">-- Select a knowledge base --</option>
-      </select>
-    </div>
-
-    <!-- Query -->
-    <div class="query-row">
-      <input type="text" id="queryInput" placeholder="Ask a question about the selected knowledge base..." disabled>
-      <button id="queryBtn" disabled>Search</button>
-    </div>
-
-    <!-- Loading -->
-    <div style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--color-secondary);">
-      <div class="spinner" id="searchSpinner"></div>
-      <span id="searchStatus"></span>
-    </div>
-
-    <!-- Results -->
-    <div class="results" id="results">
-      <div class="results-header" id="resultsHeader">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <span id="resultsSummary"></span>
-      </div>
-
-      <div class="answer-card" id="answerCard">
-        <h4>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5"/></svg>
-          Answer
-        </h4>
-        <div class="answer-text" id="answerText"></div>
-      </div>
-
-      <div class="chunks-list" id="chunksList"></div>
-    </div>
-  </div>
-</div>
-
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <script>
-// ─── Constants & State ─────────────────────────────────────────────────
-const API_BASE = 'http://localhost:8000';
+const { createApp, ref, computed, watch, nextTick } = Vue;
+
+const API = 'http://localhost:8000';
 const CHUNK_SIZE = 512 * 1024;
+const uuid = () => ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16));
 
-const state = {
-  kbs: [],
-  uploads: {},        // kb_id -> [{ id, name, size, status, progress }]
-  activeTab: 'kb',
-  expandedKbId: null,
-};
+createApp({
+  setup() {
+    // ─── State ──────────────────────────
+    const tab = ref('kb');           // 'kb' | 'query'
+    const kbSearch = ref('');
+    const kbs = ref([]);
+    const selectedKbId = ref(null);
+    const kbDetail = ref(null);
+    const files = ref([]);           // files in selected KB
+    const uploadingFiles = ref({});  // id -> { progress }
 
-// ─── DOM refs ──────────────────────────────────────────────────────────
-const $ = (s) => document.querySelector(s);
-const $$ = (s) => document.querySelectorAll(s);
+    // Query
+    const queryKbId = ref('');
+    const queryText = ref('');
+    const querying = ref(false);
+    const answer = ref('');
+    const chunks = ref([]);
 
-// ─── Tab switching ─────────────────────────────────────────────────────
-$$('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-});
+    // Modal
+    const showCreateModal = ref(false);
+    const newKbName = ref('');
+    const creating = ref(false);
 
-function switchTab(tab) {
-  state.activeTab = tab;
-  $$('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  $$('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `panel-${tab}`));
-  if (tab === 'qa') refreshKbSelect();
-}
-
-// ─── API helpers ───────────────────────────────────────────────────────
-async function api(method, path, body) {
-  const opts = { method, headers: {} };
-  if (body && !(body instanceof FormData)) {
-    opts.headers['Content-Type'] = 'application/json';
-    opts.body = JSON.stringify(body);
-  } else if (body instanceof FormData) {
-    opts.body = body;
-  }
-  const res = await fetch(`${API_BASE}${path}`, opts);
-  if (!res.ok) {
-    const err = await res.text().catch(() => 'Unknown error');
-    throw new Error(`${res.status}: ${err}`);
-  }
-  return res.json();
-}
-
-// ─── KB Management ─────────────────────────────────────────────────────
-$('#createKbBtn').addEventListener('click', createKB);
-$('#kbNameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') createKB(); });
-
-async function createKB() {
-  const name = $('#kbNameInput').value.trim();
-  if (!name) return;
-  $('#createKbBtn').disabled = true;
-  try {
-    const kb = await api('POST', '/api/kb', { name });
-    state.kbs.push(kb);
-    state.uploads[kb.id] = [];
-    $('#kbNameInput').value = '';
-    renderKBList();
-    refreshKbSelect();
-  } catch (err) {
-    alert(`Failed to create knowledge base: ${err.message}`);
-  }
-  $('#createKbBtn').disabled = false;
-}
-
-async function deleteKB(kbId, e) {
-  e.stopPropagation();
-  if (!confirm('Delete this knowledge base and all its files?')) return;
-  try {
-    await api('DELETE', `/api/kb/${kbId}`);
-    state.kbs = state.kbs.filter(k => k.id !== kbId);
-    delete state.uploads[kbId];
-    if (state.expandedKbId === kbId) state.expandedKbId = null;
-    renderKBList();
-    refreshKbSelect();
-  } catch (err) {
-    alert(`Failed to delete: ${err.message}`);
-  }
-}
-
-// ─── KB List Rendering ─────────────────────────────────────────────────
-function renderKBList() {
-  const container = $('#kbList');
-  const emptyKb = $('#emptyKb');
-
-  // Clear existing kb-cards
-  container.querySelectorAll('.kb-card').forEach(el => el.remove());
-
-  if (state.kbs.length === 0) {
-    emptyKb.style.display = '';
-    return;
-  }
-  emptyKb.style.display = 'none';
-
-  state.kbs.forEach(kb => {
-    const uploads = state.uploads[kb.id] || [];
-    const doneCount = uploads.filter(f => f.status === 'done').length;
-    const card = document.createElement('div');
-    card.className = 'kb-card' + (state.expandedKbId === kb.id ? ' expanded' : '');
-    card.innerHTML = `
-      <div class="kb-card-header" data-kb-id="${kb.id}">
-        <svg class="kb-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-        </svg>
-        <div class="kb-info">
-          <div class="kb-name">${esc(kb.name)}</div>
-          <div class="kb-meta">${doneCount} file${doneCount !== 1 ? 's' : ''} &middot; ${fmtDate(kb.created_at)}</div>
-        </div>
-        <button class="kb-delete" data-kb-id="${kb.id}" title="Delete KB">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="3,6 5,6 21,6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
-          </svg>
-        </button>
-        <svg class="kb-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="6,9 12,15 18,9"/>
-        </svg>
-      </div>
-      <div class="kb-detail">
-        <div class="upload-zone" data-kb-id="${kb.id}">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/>
-          </svg>
-          <div class="label">Drop files or click to add</div>
-          <div class="hint">Files are chunked before upload</div>
-          <input type="file" class="file-input" multiple accept=".txt,.pdf,.md,.csv,.json,.docx,.html">
-        </div>
-        <div class="kb-files" data-kb-id="${kb.id}">
-          ${uploads.length === 0 ? `<div class="empty" style="padding:20px"><div class="desc">No files yet</div></div>` : ''}
-        </div>
-      </div>
-    `;
-    container.appendChild(card);
-
-    // Render file items
-    const filesContainer = card.querySelector('.kb-files');
-    renderKBFiles(kb.id, filesContainer);
-  });
-
-  // Attach event listeners
-  container.querySelectorAll('.kb-card-header').forEach(h => {
-    h.addEventListener('click', () => toggleKB(h.dataset.kbId));
-  });
-  container.querySelectorAll('.kb-delete').forEach(btn => {
-    btn.addEventListener('click', (e) => deleteKB(btn.dataset.kbId, e));
-  });
-  container.querySelectorAll('.upload-zone').forEach(zone => {
-    const kbId = zone.dataset.kbId;
-    const fileInput = zone.querySelector('.file-input');
-    zone.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', (e) => handleFiles(kbId, e.target.files));
-    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('drag-over'); });
-    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-    zone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      zone.classList.remove('drag-over');
-      handleFiles(kbId, e.dataTransfer.files);
+    // ─── Computed ───────────────────────
+    const filteredKbs = computed(() => {
+      const q = kbSearch.value.toLowerCase().trim();
+      if (!q) return kbs.value;
+      return kbs.value.filter(kb => kb.name.toLowerCase().includes(q));
     });
-  });
-}
 
-function renderKBFiles(kbId, container) {
-  const uploads = state.uploads[kbId] || [];
-  const existingIds = new Set();
-  container.querySelectorAll('.file-item').forEach(el => {
-    const fid = el.dataset.fileId;
-    existingIds.add(fid);
-    const f = uploads.find(u => u.id === fid);
-    if (!f) { el.remove(); return; }
-    updateFileItem(el, f);
-  });
-  uploads.forEach(f => {
-    if (!existingIds.has(f.id)) {
-      container.querySelectorAll('.empty').forEach(e => e.remove());
-      const el = document.createElement('div');
-      el.className = 'file-item';
-      el.dataset.fileId = f.id;
-      updateFileItem(el, f);
-      el.querySelector('.remove-btn').addEventListener('click', () => removeFile(kbId, f.id));
-      container.appendChild(el);
+    const queryKbList = computed(() => kbs.value.filter(kb => kb.file_count > 0));
+
+    // ─── KB Actions ─────────────────────
+    async function fetchKbs() {
+      try { kbs.value = (await (await fetch(`${API}/api/kb`)).json()) || []; } catch {}
     }
-  });
-}
 
-function updateFileItem(el, f) {
-  const statusClass = f.status === 'uploading' ? 'uploading' : f.status === 'done' ? 'done' : 'error';
-  const statusText = f.status === 'uploading' ? `${f.progress}%` : f.status === 'done' ? 'Done' : 'Error';
-  const sizeStr = fmtSize(f.size);
-  el.innerHTML = `
-    <svg class="file-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-      <polyline points="14,2 14,8 20,8"/>
-    </svg>
-    <div class="file-info">
-      <div class="file-name">${esc(f.name)}</div>
-      <div class="file-meta">${sizeStr} &middot; ${f.chunkCount || Math.ceil(f.size / CHUNK_SIZE)} chunks</div>
-      <div class="progress-bar ${f.status === 'uploading' ? 'active' : ''}">
-        <div class="fill" style="width:${f.progress}%"></div>
+    async function createKb() {
+      const name = newKbName.value.trim();
+      if (!name) return;
+      creating.value = true;
+      try {
+        const kb = await (await fetch(`${API}/api/kb`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name })
+        })).json();
+        showCreateModal.value = false;
+        newKbName.value = '';
+        await fetchKbs();
+        openKb(kb.id);
+      } catch {}
+      creating.value = false;
+    }
+
+    async function deleteKb(kbId, e) {
+      e && e.stopPropagation();
+      const kb = kbs.value.find(k => k.id === kbId);
+      if (!confirm(`Delete "${kb?.name}" and all its files?`)) return;
+      try { await fetch(`${API}/api/kb/${kbId}`, { method: 'DELETE' }); } catch {}
+      if (selectedKbId.value === kbId) { selectedKbId.value = null; kbDetail.value = null; files.value = []; }
+      await fetchKbs();
+    }
+
+    async function openKb(kbId) {
+      selectedKbId.value = kbId;
+      try {
+        kbDetail.value = await (await fetch(`${API}/api/kb/${kbId}`)).json();
+        files.value = kbDetail.value.files || [];
+      } catch {}
+    }
+
+    function backToList() {
+      selectedKbId.value = null;
+      kbDetail.value = null;
+      files.value = [];
+      uploadingFiles.value = {};
+      fetchKbs();
+    }
+
+    // ─── File Upload ────────────────────
+    function triggerUpload() {
+      const input = document.getElementById('fileInput');
+      if (input) input.click();
+    }
+
+    async function handleFileDrop(e) {
+      e.preventDefault();
+      e.currentTarget.classList.remove('drag-over');
+      await handleFileList(e.dataTransfer.files);
+    }
+
+    async function handleFilePick(e) {
+      await handleFileList(e.target.files);
+      e.target.value = '';
+    }
+
+    async function handleFileList(list) {
+      if (!selectedKbId.value) return;
+      for (const file of list) {
+        const id = uuid();
+        const fileObj = { id, name: file.name, size: file.size, status: 'uploading' };
+        files.value.push(fileObj);
+        uploadingFiles.value[id] = { progress: 0 };
+        await uploadFileChunks(id, file);
+      }
+    }
+
+    async function uploadFileChunks(fileId, file) {
+      const total = Math.ceil(file.size / CHUNK_SIZE);
+      try {
+        for (let i = 0; i < total; i++) {
+          const chunk = file.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+          const form = new FormData();
+          form.append('file_id', fileId);
+          form.append('file_name', file.name);
+          form.append('file_size', file.size);
+          form.append('kb_id', selectedKbId.value);
+          form.append('chunk_index', i);
+          form.append('total_chunks', total);
+          form.append('chunk', chunk);
+          const res = await fetch(`${API}/api/upload/chunk`, { method: 'POST', body: form });
+          if (!res.ok) throw new Error('Upload failed');
+          uploadingFiles.value[fileId] = { progress: Math.round(((i + 1) / total) * 100) };
+        }
+        const f = files.value.find(f => f.id === fileId);
+        if (f) f.status = 'done';
+      } catch {
+        const f = files.value.find(f => f.id === fileId);
+        if (f) f.status = 'error';
+      }
+      delete uploadingFiles.value[fileId];
+    }
+
+    async function deleteFile(fileId) {
+      try { await fetch(`${API}/api/files/${fileId}`, { method: 'DELETE' }); } catch {}
+      files.value = files.value.filter(f => f.id !== fileId);
+      await fetchKbs(); // update file_count
+    }
+
+    function getProgress(fileId) {
+      return uploadingFiles.value[fileId]?.progress || 0;
+    }
+
+    // ─── Query ──────────────────────────
+    async function runQuery() {
+      const q = queryText.value.trim();
+      if (!q || !queryKbId.value) return;
+      querying.value = true;
+      answer.value = '';
+      chunks.value = [];
+      try {
+        const res = await fetch(`${API}/api/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q, kb_id: queryKbId.value, top_k: 5 })
+        });
+        const data = await res.json();
+        answer.value = data.answer || '';
+        chunks.value = data.chunks || [];
+      } catch (err) {
+        answer.value = `Error: ${err.message}`;
+      }
+      querying.value = false;
+    }
+
+    // ─── Init ───────────────────────────
+    fetchKbs();
+
+    return {
+      tab, kbSearch, kbs, filteredKbs, selectedKbId, kbDetail, files, uploadingFiles,
+      queryKbId, queryText, querying, answer, chunks, queryKbList,
+      showCreateModal, newKbName, creating,
+      fetchKbs, createKb, deleteKb, openKb, backToList,
+      triggerUpload, handleFileDrop, handleFilePick, deleteFile, getProgress,
+      runQuery,
+      fmtSize(v) { return v < 1024 ? v+' B' : v < 1048576 ? (v/1024).toFixed(1)+' KB' : (v/1048576).toFixed(1)+' MB'; },
+    };
+  },
+
+  template: `
+  <div class="shell">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="2" width="20" height="20" rx="4"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="12" y2="16"/>
+        </svg>
+        <h1>MiniRAG</h1>
+        <div class="dot"></div>
+      </div>
+      <div class="spacer"></div>
+    </header>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab" :class="{ active: tab === 'kb' }" @click="tab = 'kb'; backToList()">Knowledge Base</button>
+      <button class="tab" :class="{ active: tab === 'query' }" @click="tab = 'query'; fetchKbs()">Query</button>
+    </div>
+
+    <!-- ═══ KB Tab ═══ -->
+    <template v-if="tab === 'kb'">
+
+      <!-- KB List -->
+      <template v-if="!selectedKbId">
+        <div class="kb-toolbar">
+          <input type="text" v-model="kbSearch" placeholder="Search knowledge bases...">
+          <button class="btn primary" @click="showCreateModal = true">
+            <span class="icon">+</span> New
+          </button>
+        </div>
+
+        <div v-if="filteredKbs.length" class="kb-list">
+          <div class="kb-item" v-for="kb in filteredKbs" :key="kb.id" @click="openKb(kb.id)">
+            <svg class="kb-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>
+            </svg>
+            <div class="kb-info">
+              <div class="kb-name">{{ kb.name }}</div>
+              <div class="kb-meta">{{ kb.file_count }} file{{ kb.file_count !== 1 ? 's' : '' }}</div>
+            </div>
+            <span class="kb-count">{{ kb.file_count }}</span>
+            <div class="kb-actions">
+              <button class="btn danger" style="padding:4px 8px;font-size:12px" @click="deleteKb(kb.id, $event)">Delete</button>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="empty-state">
+          <div class="icon">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>
+            </svg>
+          </div>
+          <div class="title" v-if="kbSearch">No matching knowledge bases</div>
+          <div class="title" v-else>No knowledge bases yet</div>
+          <div class="desc" v-if="!kbSearch">Click "New" to create your first one</div>
+        </div>
+      </template>
+
+      <!-- KB Detail -->
+      <template v-else>
+        <div class="detail-header">
+          <button class="back" @click="backToList">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m15 18-6-6 6-6"/>
+            </svg>
+          </button>
+          <h2>{{ kbDetail?.name || '...' }}</h2>
+          <button class="btn danger" style="padding:5px 10px;font-size:12px" @click="deleteKb(selectedKbId); tab = 'kb'">Delete KB</button>
+        </div>
+
+        <!-- Upload -->
+        <div class="upload-zone" @click="triggerUpload" @dragover.prevent="$event.currentTarget.classList.add('drag-over')" @dragleave="$event.currentTarget.classList.remove('drag-over')" @drop="handleFileDrop">
+          <div class="icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+          </div>
+          <div class="label">Drop files or click to upload</div>
+          <div class="hint">Chunked upload, max 512KB per chunk</div>
+          <input id="fileInput" type="file" multiple accept=".txt,.pdf,.md,.csv,.json,.docx,.html" @change="handleFilePick" style="display:none">
+        </div>
+
+        <!-- File List -->
+        <div class="section-title">Files ({{ files.length }})</div>
+        <div class="file-list" v-if="files.length">
+          <div class="file-row" v-for="f in files" :key="f.id">
+            <svg class="file-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+            </svg>
+            <span class="file-name">{{ f.name }}</span>
+            <span class="file-meta">{{ fmtSize(f.size) }}</span>
+            <template v-if="uploadingFiles[f.id]">
+              <div class="progress-track"><div class="progress-fill" :style="{ width: getProgress(f.id) + '%' }"></div></div>
+              <span class="file-status uploading">{{ getProgress(f.id) }}%</span>
+            </template>
+            <span v-else class="file-status" :class="f.status">{{ f.status === 'done' ? 'Done' : f.status === 'error' ? 'Error' : f.status }}</span>
+            <button class="del-btn" @click="deleteFile(f.id)" :title="'Remove'">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div v-else class="empty-state" style="padding:24px">
+          <div class="desc">No files in this knowledge base</div>
+        </div>
+      </template>
+    </template>
+
+    <!-- ═══ Query Tab ═══ -->
+    <template v-if="tab === 'query'">
+      <div class="query-section">
+
+        <div class="kb-select">
+          <label>Knowledge Base</label>
+          <select v-model="queryKbId">
+            <option value="" disabled>Select a knowledge base...</option>
+            <option v-for="kb in queryKbList" :key="kb.id" :value="kb.id">{{ kb.name }} ({{ kb.file_count }} files)</option>
+          </select>
+        </div>
+
+        <div class="query-row">
+          <input type="text" v-model="queryText" placeholder="Ask a question..." @keydown.enter="runQuery" :disabled="!queryKbId || querying">
+          <button class="btn primary" @click="runQuery" :disabled="!queryKbId || !queryText.trim() || querying">
+            <template v-if="querying"><span class="spinner"></span></template>
+            <template v-else>Search</template>
+          </button>
+        </div>
+
+        <!-- Results -->
+        <div class="results" v-if="answer || chunks.length">
+          <div class="results-header" v-if="chunks.length">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            {{ chunks.length }} chunk{{ chunks.length > 1 ? 's' : '' }} retrieved
+          </div>
+
+          <div class="answer-card" v-if="answer">
+            <h4>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/></svg>
+              Answer
+            </h4>
+            <div class="answer-text">{{ answer }}</div>
+          </div>
+
+          <div v-for="(c, i) in chunks" :key="i" class="chunk-item">
+            <div class="chunk-header">
+              <span>{{ c.file_name }}</span>
+              <span class="chunk-score">{{ c.score.toFixed(4) }}</span>
+            </div>
+            <div class="chunk-text">{{ c.text }}</div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ═══ Create KB Modal ═══ -->
+    <div class="modal-mask" v-if="showCreateModal" @click.self="showCreateModal = false">
+      <div class="modal" @click.stop>
+        <h3>New Knowledge Base</h3>
+        <div class="field">
+          <label>Name</label>
+          <input type="text" v-model="newKbName" placeholder="e.g. Project Docs" @keydown.enter="createKb" ref="nameInput" autofocus>
+        </div>
+        <div class="actions">
+          <button class="btn" @click="showCreateModal = false">Cancel</button>
+          <button class="btn primary" @click="createKb" :disabled="!newKbName.trim() || creating">{{ creating ? 'Creating...' : 'Create' }}</button>
+        </div>
       </div>
     </div>
-    <span class="file-status ${statusClass}">${statusText}</span>
-    <button class="remove-btn" title="Remove">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-      </svg>
-    </button>
-  `;
-}
-
-function toggleKB(kbId) {
-  state.expandedKbId = state.expandedKbId === kbId ? null : kbId;
-  renderKBList();
-}
-
-// ─── File Upload ───────────────────────────────────────────────────────
-function handleFiles(kbId, files) {
-  for (const file of files) {
-    const id = ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
-    const fileObj = { id, name: file.name, size: file.size, status: 'pending', progress: 0, chunkCount: 0 };
-    if (!state.uploads[kbId]) state.uploads[kbId] = [];
-    state.uploads[kbId].push(fileObj);
-    renderKBList();
-    uploadFile(kbId, fileObj, file);
-  }
-}
-
-async function uploadFile(kbId, fileObj, file) {
-  fileObj.status = 'uploading';
-  renderKBList();
-
-  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-  fileObj.chunkCount = totalChunks;
-
-  for (let i = 0; i < totalChunks; i++) {
-    const chunk = file.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-    const form = new FormData();
-    form.append('file_id', fileObj.id);
-    form.append('file_name', fileObj.name);
-    form.append('file_size', fileObj.size);
-    form.append('kb_id', kbId);
-    form.append('chunk_index', i);
-    form.append('total_chunks', totalChunks);
-    form.append('chunk', chunk);
-    await fetch(`${API_BASE}/api/upload/chunk`, { method: 'POST', body: form });
-    fileObj.progress = Math.round(((i + 1) / totalChunks) * 100);
-    renderKBList();
-  }
-
-  fileObj.status = 'done';
-  renderKBList();
-  refreshKbSelect();
-}
-
-async function removeFile(kbId, fileId) {
-  try { await api('DELETE', `/api/files/${fileId}`); } catch (_) {}
-  if (state.uploads[kbId]) {
-    state.uploads[kbId] = state.uploads[kbId].filter(f => f.id !== fileId);
-  }
-  renderKBList();
-  refreshKbSelect();
-}
-
-// ─── Q&A Tab ───────────────────────────────────────────────────────────
-function refreshKbSelect() {
-  const select = $('#kbSelect');
-  const doneKbs = state.kbs.filter(kb => {
-    const uploads = state.uploads[kb.id] || [];
-    return uploads.some(f => f.status === 'done');
-  });
-  select.innerHTML = '<option value="">-- Select a knowledge base --</option>';
-  doneKbs.forEach(kb => {
-    const opt = document.createElement('option');
-    opt.value = kb.id;
-    opt.textContent = `${kb.name} (${(state.uploads[kb.id] || []).filter(f => f.status === 'done').length} files)`;
-    select.appendChild(opt);
-  });
-  select.disabled = doneKbs.length === 0;
-  updateQueryState();
-}
-
-$('#kbSelect').addEventListener('change', updateQueryState);
-
-function updateQueryState() {
-  const kbId = $('#kbSelect').value;
-  const canQuery = !!kbId;
-  $('#queryInput').disabled = !canQuery;
-  $('#queryBtn').disabled = !canQuery;
-  if (!canQuery) {
-    $('#queryInput').placeholder = 'Select a knowledge base to start...';
-  } else {
-    $('#queryInput').placeholder = 'Ask a question about the selected documents...';
-  }
-}
-
-$('#queryBtn').addEventListener('click', runQuery);
-$('#queryInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') runQuery(); });
-
-async function runQuery() {
-  const query = $('#queryInput').value.trim();
-  const kbId = $('#kbSelect').value;
-  if (!query || !kbId) return;
-
-  $('#searchSpinner').classList.add('active');
-  $('#searchStatus').textContent = 'Searching...';
-  $('#queryBtn').disabled = true;
-  hideResults();
-
-  try {
-    const data = await api('POST', '/api/query', { query, kb_id: kbId, top_k: 5 });
-    displayResults(query, data.answer, (data.chunks || []).map(c => ({
-      file: c.file_name,
-      text: c.text,
-      score: c.score.toFixed(4),
-    })));
-  } catch (err) {
-    displayResults(query, `Error: ${err.message}`, []);
-  }
-
-  $('#searchSpinner').classList.remove('active');
-  $('#searchStatus').textContent = '';
-  $('#queryBtn').disabled = false;
-}
-
-function displayResults(query, answer, chunks) {
-  $('#resultsHeader').classList.add('visible');
-  $('#resultsSummary').textContent = `${chunks.length} chunks retrieved`;
-
-  $('#answerCard').classList.add('visible');
-  $('#answerText').textContent = answer;
-
-  const list = $('#chunksList');
-  list.innerHTML = '';
-  chunks.forEach((chunk, i) => {
-    const el = document.createElement('div');
-    el.className = 'chunk-item visible';
-    el.innerHTML = `
-      <div class="chunk-header">
-        <span>${esc(chunk.file)} &middot; Chunk ${i + 1}</span>
-        <span class="chunk-score">${chunk.score}</span>
-      </div>
-      <div class="chunk-text">${esc(chunk.text)}</div>
-    `;
-    list.appendChild(el);
-  });
-}
-
-function hideResults() {
-  $('#resultsHeader').classList.remove('visible');
-  $('#answerCard').classList.remove('visible');
-  $('#chunksList').querySelectorAll('.chunk-item').forEach(el => el.classList.remove('visible'));
-}
-
-// ─── Utilities ─────────────────────────────────────────────────────────
-function esc(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-function fmtSize(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function fmtDate(iso) {
-  const d = new Date(iso);
-  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
+  </div>
+  `
+}).mount('#app');
 </script>
 </body>
 </html>
