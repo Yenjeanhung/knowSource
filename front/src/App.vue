@@ -69,7 +69,7 @@ async function deleteKb(kbId) {
 </template>
 
 <style scoped>
-.shell { max-width: 640px; margin: 0 auto; padding: 0 20px; min-height: 100dvh; display: flex; flex-direction: column; }
+.shell { max-width: 1024px; margin: 0 auto; padding: 0 24px; min-height: 100dvh; display: flex; flex-direction: column; }
 
 .header { display: flex; align-items: center; gap: 10px; padding: 20px 0 16px; border-bottom: 1px solid var(--c-border); margin-bottom: 24px; }
 .header .logo { display: flex; align-items: center; gap: 8px; }
