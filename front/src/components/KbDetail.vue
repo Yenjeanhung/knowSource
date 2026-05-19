@@ -1,6 +1,6 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { getKb, deleteFile as apiDeleteFile, uploadChunk, fetchKbs } from '../api'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { getKb, deleteFile as apiDeleteFile, uploadChunk, processFile, getFileStatus } from '../api'
 
 const CHUNK_SIZE = 512 * 1024
 const uuid = () => ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16))
@@ -11,12 +11,26 @@ const emit = defineEmits(['back', 'deleted'])
 const kb = ref(null)
 const files = ref([])
 const uploading = ref({})
+const processing = ref({}) // { fileId: progress }
+let pollTimers = {}
 
 onMounted(async () => {
   try {
     kb.value = await getKb(props.kbId)
-    files.value = kb.value.files || []
+    files.value = (kb.value.files || []).map(f => ({
+      ...f,
+      // 服务端 indexed 状态映射到前端
+      _status: f.status === 'indexed' ? 'indexed' : f.status === 'failed' ? 'failed' : f.status,
+    }))
+    // 恢复正在处理中的文件轮询
+    for (const f of files.value) {
+      if (f.status === 'processing') startPolling(f.id)
+    }
   } catch {}
+})
+
+onUnmounted(() => {
+  Object.values(pollTimers).forEach(clearInterval)
 })
 
 function fmtSize(v) {
@@ -60,7 +74,7 @@ async function uploadFile(fileId, file) {
       uploading.value[fileId] = { progress: Math.round(((i + 1) / total) * 100) }
     }
     const f = files.value.find(f => f.id === fileId)
-    if (f) f.status = 'done'
+    if (f) f.status = 'uploaded'
   } catch {
     const f = files.value.find(f => f.id === fileId)
     if (f) f.status = 'error'
@@ -68,13 +82,55 @@ async function uploadFile(fileId, file) {
   delete uploading.value[fileId]
 }
 
+async function startProcess(fileId) {
+  try {
+    await processFile(fileId)
+    const f = files.value.find(f => f.id === fileId)
+    if (f) f.status = 'processing'
+    processing.value[fileId] = 0
+    startPolling(fileId)
+  } catch {}
+}
+
+function startPolling(fileId) {
+  processing.value[fileId] = processing.value[fileId] || 0
+  const timer = setInterval(async () => {
+    try {
+      const data = await getFileStatus(fileId)
+      processing.value[fileId] = data.progress || 0
+      if (data.status === 'indexed' || data.status === 'failed') {
+        clearInterval(timer)
+        delete pollTimers[fileId]
+        const f = files.value.find(f => f.id === fileId)
+        if (f) {
+          f.status = data.status
+          if (data.status === 'indexed') delete processing.value[fileId]
+        }
+      }
+    } catch {
+      clearInterval(timer)
+      delete pollTimers[fileId]
+    }
+  }, 1000)
+  pollTimers[fileId] = timer
+}
+
 async function deleteFile(fileId) {
+  if (pollTimers[fileId]) {
+    clearInterval(pollTimers[fileId])
+    delete pollTimers[fileId]
+  }
+  delete processing.value[fileId]
   try { await apiDeleteFile(fileId) } catch {}
   files.value = files.value.filter(f => f.id !== fileId)
 }
 
 function getProgress(fileId) {
   return uploading.value[fileId]?.progress || 0
+}
+
+function getProcessingProgress(fileId) {
+  return processing.value[fileId] || 0
 }
 </script>
 
@@ -111,11 +167,29 @@ function getProgress(fileId) {
         </svg>
         <span class="file-name">{{ f.name }}</span>
         <span class="file-meta">{{ fmtSize(f.size) }}</span>
+
+        <!-- 上传进度 -->
         <template v-if="uploading[f.id]">
           <div class="progress-track"><div class="progress-fill" :style="{ width: getProgress(f.id) + '%' }"></div></div>
           <span class="file-status uploading">{{ getProgress(f.id) }}%</span>
         </template>
-        <span v-else class="file-status" :class="f.status">{{ f.status === 'done' ? 'Done' : f.status === 'error' ? 'Error' : f.status }}</span>
+
+        <!-- 已上传，等待确认 -->
+        <template v-else-if="f.status === 'uploaded'">
+          <button class="btn process-btn" @click="startProcess(f.id)">Process</button>
+        </template>
+
+        <!-- 处理中，显示进度 -->
+        <template v-else-if="f.status === 'processing'">
+          <div class="progress-track"><div class="progress-fill processing" :style="{ width: getProcessingProgress(f.id) + '%' }"></div></div>
+          <span class="file-status processing">{{ getProcessingProgress(f.id) }}%</span>
+        </template>
+
+        <!-- 完成 / 失败 -->
+        <template v-else>
+          <span class="file-status" :class="f.status">{{ f.status === 'indexed' ? 'Indexed' : f.status === 'error' ? 'Error' : f.status }}</span>
+        </template>
+
         <button class="del-btn" @click="deleteFile(f.id)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -160,11 +234,24 @@ h2 { font-size: 16px; font-weight: 700; flex: 1; }
 .file-name { flex: 1; min-width: 0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .file-meta { font-size: 12px; color: var(--c-secondary); flex-shrink: 0; }
 .file-status { font-size: 12px; flex-shrink: 0; }
-.file-status.done { color: var(--c-success); }
+.file-status.indexed { color: var(--c-success); }
 .file-status.uploading { color: var(--c-accent); }
+.file-status.processing { color: var(--c-accent); }
 .file-status.error { color: var(--c-danger); }
+.file-status.failed { color: var(--c-danger); }
+
 .progress-track { width: 60px; height: 3px; background: var(--c-border); border-radius: 2px; overflow: hidden; flex-shrink: 0; }
 .progress-fill { height: 100%; background: var(--c-fg); border-radius: 2px; transition: width 200ms; }
+.progress-fill.processing { background: var(--c-accent); }
+
+.process-btn {
+  padding: 3px 10px; font-size: 11px; font-weight: 600;
+  border-radius: var(--radius-sm); border: 1px solid var(--c-border);
+  background: var(--c-muted); cursor: pointer;
+  transition: background 150ms, border-color 150ms;
+}
+.process-btn:hover { background: var(--c-fg); color: var(--c-bg); border-color: var(--c-fg); }
+
 .del-btn {
   background: none; border: none; cursor: pointer; color: var(--c-secondary);
   padding: 2px; border-radius: 3px; display: flex; align-items: center;

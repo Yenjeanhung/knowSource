@@ -26,6 +26,18 @@ export async function deleteFile(fileId) {
   await fetch(`${API}/api/files/${fileId}`, { method: 'DELETE' })
 }
 
+export async function processFile(fileId) {
+  const res = await fetch(`${API}/api/files/${fileId}/process`, { method: 'POST' })
+  if (!res.ok) throw new Error('Process failed')
+  return res.json()
+}
+
+export async function getFileStatus(fileId) {
+  const res = await fetch(`${API}/api/files/${fileId}/status`)
+  if (!res.ok) throw new Error('Status failed')
+  return res.json()
+}
+
 /**
  * 流式问答。通过回调逐 token 输出。
  * @param {string} kbId

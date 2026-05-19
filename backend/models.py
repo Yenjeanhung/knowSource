@@ -30,7 +30,8 @@ class File(Base):
     name = Column(String, nullable=False)
     size = Column(Integer, nullable=False)
     total_chunks = Column(Integer, nullable=False, default=0)
-    status = Column(String, default="uploading")  # uploading / processing / indexed / failed
+    status = Column(String, default="uploading")  # uploading / uploaded / processing / indexed / failed
+    progress = Column(Integer, default=0)  # 0-100
     path = Column(String, nullable=True)
     created_at = Column(String, default=lambda: datetime.now().isoformat())
 

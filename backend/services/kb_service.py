@@ -42,7 +42,7 @@ class KBService:
         if not kb:
             return None
         files = [
-            {"id": f.id, "name": f.name, "size": f.size, "status": f.status}
+            {"id": f.id, "name": f.name, "size": f.size, "status": f.status, "progress": f.progress}
             for f in kb.files
         ]
         return {

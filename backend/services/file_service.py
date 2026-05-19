@@ -30,7 +30,6 @@ class FileService:
         kb_id: str, chunk_index: int, total_chunks: int,
         chunk_data,
     ) -> dict:
-        # 首个分片时创建文件记录
         file = await db.get(File, file_id)
         if not file:
             file = File(
@@ -40,18 +39,15 @@ class FileService:
             db.add(file)
             await db.commit()
 
-        # 保存分片到临时文件
         chunk_path = CHUNK_DIR / f"{file_id}_{chunk_index:06d}"
         with open(chunk_path, "wb") as f:
             shutil.copyfileobj(chunk_data, f)
 
-        # 统计已接收分片数
         received = len(list(CHUNK_DIR.glob(f"{file_id}_*")))
 
-        # 全部分片到达 → 合并 + 后台处理
+        # 全部分片到达 → 合并，但不自动处理，等用户确认
         if received == total_chunks:
             await FileService._reassemble(file_id, file, db)
-            asyncio.create_task(FileService._process_file_bg(file_id))
 
         return {"status": "ok", "chunk_index": chunk_index, "received": received}
 
@@ -69,12 +65,29 @@ class FileService:
                 cp.unlink()
 
         file.path = str(target_path)
-        file.status = "processing"
+        file.status = "uploaded"
         await db.commit()
 
     @staticmethod
+    async def start_processing(file_id: str, db: AsyncSession) -> bool:
+        file = await db.get(File, file_id)
+        if not file or file.status != "uploaded":
+            return False
+        file.status = "processing"
+        file.progress = 0
+        await db.commit()
+        asyncio.create_task(FileService._process_file_bg(file_id))
+        return True
+
+    @staticmethod
+    async def get_status(file_id: str, db: AsyncSession) -> dict | None:
+        file = await db.get(File, file_id)
+        if not file:
+            return None
+        return {"status": file.status, "progress": file.progress}
+
+    @staticmethod
     async def _process_file_bg(file_id: str):
-        """后台任务：解析 → 分块 → 向量化 → 存储。"""
         async with async_session() as db:
             try:
                 file = await db.get(File, file_id)
@@ -84,15 +97,24 @@ class FileService:
                 file_path = Path(file.path)
 
                 # 1. 解析文档
+                file.progress = 10
+                await db.commit()
+
                 parser = get_parser(file_path)
                 result = parser.parse(file_path)
 
                 # 2. 文本分块
+                file.progress = 25
+                await db.commit()
+
                 text_chunks = split_text(result.content)
                 if not text_chunks:
                     file.status = "indexed"
+                    file.progress = 100
                     await db.commit()
                     return
+
+                total = len(text_chunks)
 
                 # 3. 构建 LangChain Documents
                 from langchain_core.documents import Document
@@ -108,13 +130,19 @@ class FileService:
                     for c in text_chunks
                 ]
 
-                # 4. 写入向量库（自动嵌入）
+                # 4. 写入向量库
+                file.progress = 40
+                await db.commit()
+
                 embeddings = create_embeddings()
                 vectorstore = create_vector_store(file.kb_id, embeddings)
                 chunk_ids = [f"{file_id}_{i}" for i in range(len(docs))]
                 await asyncio.to_thread(
                     vectorstore.add_documents, docs, ids=chunk_ids
                 )
+
+                file.progress = 85
+                await db.commit()
 
                 # 5. 保存分块记录到 SQLite
                 for i, chunk in enumerate(text_chunks):
@@ -128,6 +156,7 @@ class FileService:
                     db.add(db_chunk)
 
                 file.status = "indexed"
+                file.progress = 100
                 await db.commit()
 
             except Exception as e:
@@ -146,7 +175,7 @@ class FileService:
         files = result.scalars().all()
         return [
             {"id": f.id, "name": f.name, "size": f.size,
-             "kb_id": f.kb_id, "status": f.status}
+             "kb_id": f.kb_id, "status": f.status, "progress": f.progress}
             for f in files
         ]
 
@@ -156,7 +185,6 @@ class FileService:
         if not file:
             return False
 
-        # 从向量库中删除
         embeddings = create_embeddings()
         chunks = (await db.execute(
             select(Chunk).where(Chunk.file_id == file_id)
@@ -171,17 +199,14 @@ class FileService:
             except Exception:
                 pass
 
-        # 删除磁盘文件
         if file.path:
             fp = Path(file.path)
             if fp.exists():
                 fp.unlink()
 
-        # 清理临时分片
         for cp in CHUNK_DIR.glob(f"{file_id}_*"):
             cp.unlink()
 
-        # 删除数据库记录（级联删除 chunks）
         await db.delete(file)
         await db.commit()
         return True

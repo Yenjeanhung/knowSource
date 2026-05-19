@@ -24,6 +24,22 @@ async def upload_chunk(
     )
 
 
+@router.post("/files/{file_id}/process")
+async def process_file(file_id: str, db: AsyncSession = Depends(get_db)):
+    ok = await FileService.start_processing(file_id, db)
+    if not ok:
+        raise HTTPException(400, "File not ready for processing")
+    return {"status": "processing"}
+
+
+@router.get("/files/{file_id}/status")
+async def file_status(file_id: str, db: AsyncSession = Depends(get_db)):
+    result = await FileService.get_status(file_id, db)
+    if not result:
+        raise HTTPException(404, "File not found")
+    return result
+
+
 @router.get("/files")
 async def list_files(db: AsyncSession = Depends(get_db)):
     return await FileService.list_all(db)
