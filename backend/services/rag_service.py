@@ -66,6 +66,10 @@ class RAGService:
                 "file_name": doc.metadata.get("file_name", ""),
                 "text": doc.page_content[:500],
                 "score": round(1 - float(score), 4),
+                "start_offset": doc.metadata.get("start_offset"),
+                "end_offset": doc.metadata.get("end_offset"),
+                "page_number": doc.metadata.get("page_number"),
+                "file_ext": doc.metadata.get("file_ext", ""),
             })
 
         # LLM 生成回答
@@ -109,6 +113,10 @@ class RAGService:
                 "file_name": doc.metadata.get("file_name", ""),
                 "text": doc.page_content[:500],
                 "score": round(1 - float(score), 4),
+                "start_offset": doc.metadata.get("start_offset"),
+                "end_offset": doc.metadata.get("end_offset"),
+                "page_number": doc.metadata.get("page_number"),
+                "file_ext": doc.metadata.get("file_ext", ""),
             })
 
         # 发送检索到的 chunks

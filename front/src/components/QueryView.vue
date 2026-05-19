@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch, reactive } from 'vue'
 import { marked } from 'marked'
 import { fetchKbs, queryRagStream } from '../api'
+import PreviewModal from './PreviewModal.vue'
 
 const kbs = ref([])
 const queryKbId = ref('')
@@ -56,6 +57,21 @@ watch([answerExThink, querying], () => {
     requestAnimationFrame(updateAnswerHeight)
   }
 })
+
+/* 预览弹窗 */
+const previewVisible = ref(false)
+const previewChunk = ref(null)
+
+function openPreview(c) {
+  if (!c.file_id) return
+  previewChunk.value = c
+  previewVisible.value = true
+}
+
+function closePreview() {
+  previewVisible.value = false
+  previewChunk.value = null
+}
 
 function pct(c) { return Math.round(c.score * 100) }
 
@@ -154,6 +170,8 @@ onMounted(loadKbs)
               v-for="(c, i) in chunks" :key="i"
               class="source-chip"
               :class="{ active: expandedSources[i] }"
+              title="双击预览文件原文"
+              @dblclick="openPreview(c)"
             >
               <div class="source-chip-top" @click="toggleSource(i)">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -167,6 +185,19 @@ onMounted(loadKbs)
         </div>
       </div>
     </div>
+
+    <!-- File Preview Modal -->
+    <PreviewModal
+      :visible="previewVisible"
+      :file-id="previewChunk?.file_id || ''"
+      :file-name="previewChunk?.file_name || ''"
+      :file-ext="previewChunk?.file_ext || ''"
+      :page-number="previewChunk?.page_number || null"
+      :start-offset="previewChunk?.start_offset || 0"
+      :end-offset="previewChunk?.end_offset || 0"
+      :chunk-text="previewChunk?.text || ''"
+      @close="closePreview"
+    />
   </div>
 </template>
 

@@ -107,7 +107,7 @@ class FileService:
                 file.progress = 25
                 await db.commit()
 
-                text_chunks = split_text(result.content)
+                text_chunks = split_text(result.content, result.metadata)
                 if not text_chunks:
                     file.status = "failed"
                     file.message = "文档内容为空，可能为扫描版 PDF（不支持图片/扫描格式）"
@@ -126,6 +126,10 @@ class FileService:
                             "file_id": file_id,
                             "file_name": file.name,
                             "chunk_index": c["index"],
+                            "start_offset": c["start_offset"],
+                            "end_offset": c["end_offset"],
+                            "page_number": c.get("page_number"),
+                            "file_ext": file_path.suffix.lower(),
                         },
                     )
                     for c in text_chunks

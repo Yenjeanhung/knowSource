@@ -89,6 +89,16 @@ export async function queryRagStream(kbId, query, { onChunks, onToken }) {
   }
 }
 
+export function getFilePreviewUrl(fileId) {
+  return `${API}/api/files/${fileId}/preview`
+}
+
+export async function fetchFileContent(fileId) {
+  const res = await fetch(`${API}/api/files/${fileId}/preview`)
+  if (!res.ok) throw new Error('Preview failed')
+  return res.text()
+}
+
 export async function uploadChunk({ fileId, fileName, fileSize, kbId, chunkIndex, totalChunks, chunk }) {
   const form = new FormData()
   form.append('file_id', fileId)
