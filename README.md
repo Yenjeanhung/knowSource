@@ -1,4 +1,4 @@
-# MiniRAG
+# KnowSource
 
 基于知识库的轻量级 RAG（检索增强生成）问答系统。
 
