@@ -1,4 +1,4 @@
-# MiniRAG 前端框架说明
+# KnowSource 前端框架说明
 
 ## 技术栈
 

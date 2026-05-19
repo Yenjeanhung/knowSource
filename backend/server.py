@@ -1,5 +1,5 @@
 """
-MiniRAG Backend — 基于知识库的 RAG 问答服务。
+KnowSource Backend — 基于知识库的 RAG 问答服务。
 
 启动: pip install -r requirements.txt && python server.py
 """
@@ -34,12 +34,12 @@ async def lifespan(app: FastAPI):
     from providers.llm import create_llm
     create_llm()  # 预加载
 
-    logger.info("MiniRAG 服务已启动")
+    logger.info("KnowSource 服务已启动")
     yield
-    logger.info("MiniRAG 服务已关闭")
+    logger.info("KnowSource 服务已关闭")
 
 
-app = FastAPI(title="MiniRAG", lifespan=lifespan)
+app = FastAPI(title="KnowSource", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
