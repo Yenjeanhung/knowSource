@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { marked } from 'marked'
 import { fetchKbs, queryRagStream } from '../api'
 
 const kbs = ref([])
@@ -11,8 +12,13 @@ const chunks = ref([])
 
 const queryKbList = computed(() => kbs.value.filter(kb => kb.file_count > 0))
 
-/* 解析 <think>...</think> 块，抽取出 think 内容和正文 */
-const thinkBlocks = ref([])  // [{ content: '...' }]
+function renderMd(text) {
+  if (!text) return ''
+  return marked.parse(text)
+}
+
+/* 解析 <think>...</think> 块 */
+const thinkBlocks = ref([])
 const answerExThink = computed(() => {
   let s = answerRaw.value
   thinkBlocks.value = []
@@ -27,6 +33,23 @@ const answerExThink = computed(() => {
 })
 
 const thinkExpanded = ref(false)
+
+/* 回答区域动态高度 */
+const answerBoxRef = ref(null)
+const answerMaxH = ref('50vh')
+
+function updateAnswerHeight() {
+  if (!answerBoxRef.value) return
+  const rect = answerBoxRef.value.getBoundingClientRect()
+  const spaceBelow = window.innerHeight - rect.top - 24
+  answerMaxH.value = Math.max(120, spaceBelow) + 'px'
+}
+
+watch([answerExThink, querying], () => {
+  if (!querying.value) {
+    requestAnimationFrame(updateAnswerHeight)
+  }
+})
 
 async function loadKbs() {
   try { kbs.value = await fetchKbs() } catch {}
@@ -87,24 +110,28 @@ onMounted(loadKbs)
           <svg class="think-icon" :class="{ open: thinkExpanded }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           <span>{{ thinkExpanded ? '收起思考过程' : '查看思考过程' }}</span>
         </div>
-        <div class="think-content" v-show="thinkExpanded">{{ b.content }}</div>
+        <div class="think-content markdown-body" v-show="thinkExpanded" v-html="renderMd(b.content)"></div>
       </div>
 
-      <div class="answer-card" v-if="answerExThink">
+      <div class="answer-card" ref="answerBoxRef" v-if="answerExThink" :class="{ streaming: querying }">
         <h4>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/></svg>
           Answer
         </h4>
-        <div class="answer-text">{{ answerExThink }}<span class="cursor" v-if="querying">|</span></div>
+        <div class="answer-text" :style="{ maxHeight: answerMaxH }">
+          <div class="markdown-body" v-html="renderMd(answerExThink)"></div>
+        </div>
       </div>
 
-      <!-- Fallback: no think tags, show raw -->
-      <div class="answer-card" v-if="!answerExThink && answerRaw">
+      <!-- Fallback: no think tags -->
+      <div class="answer-card" ref="answerBoxRef" v-if="!answerExThink && answerRaw" :class="{ streaming: querying }">
         <h4>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/></svg>
           Answer
         </h4>
-        <div class="answer-text">{{ answerRaw }}<span class="cursor" v-if="querying">|</span></div>
+        <div class="answer-text" :style="{ maxHeight: answerMaxH }">
+          <div class="markdown-body" v-html="renderMd(answerRaw)"></div>
+        </div>
       </div>
 
       <div v-for="(c, i) in chunks" :key="i" class="chunk-item">
@@ -154,16 +181,20 @@ onMounted(loadKbs)
 .think-content {
   padding: 0 14px 12px;
   font-size: 13px; line-height: 1.65; color: #6b7280;
-  white-space: pre-wrap;
   border-top: 1px solid #e2d9f3;
-  margin-top: 0; padding-top: 10px;
+  padding-top: 10px;
 }
 
 .answer-card { border: 1px solid var(--c-border); border-radius: var(--radius); padding: 14px 16px; }
 .answer-card h4 { font-size: 13px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; color: var(--c-secondary); }
-.answer-card .answer-text { font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+.answer-card .answer-text {
+  font-size: 14px; line-height: 1.7;
+  overflow-y: auto;
+}
 
-.cursor {
+/* streaming cursor via ::after on answer-card */
+.answer-card.streaming .markdown-body::after {
+  content: '|';
   animation: blink 0.7s step-end infinite;
   font-weight: 100;
   color: var(--c-secondary);
@@ -175,8 +206,41 @@ onMounted(loadKbs)
 .chunk-score { font-weight: 700; color: var(--c-accent); }
 .chunk-text { line-height: 1.6; }
 
-@media (max-width: 480px) {
-  .query-row { flex-direction: column; }
-  .query-row .btn { width: 100%; justify-content: center; }
+/* Markdown body styles (not scoped — apply to v-html content) */
+</style>
+
+<style>
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+  margin: 12px 0 6px; font-weight: 600; color: var(--c-fg);
 }
+.markdown-body h1 { font-size: 1.25em; }
+.markdown-body h2 { font-size: 1.15em; }
+.markdown-body h3 { font-size: 1.05em; }
+.markdown-body p { margin: 6px 0; }
+.markdown-body ul, .markdown-body ol { padding-left: 1.5em; margin: 6px 0; }
+.markdown-body li { margin: 2px 0; }
+.markdown-body code {
+  background: #f5f5f5; padding: 2px 6px; border-radius: 3px;
+  font-size: 0.9em; font-family: var(--font-mono, 'Consolas', monospace);
+}
+.markdown-body pre {
+  background: #1e1e1e; color: #d4d4d4; padding: 12px 16px;
+  border-radius: 6px; overflow-x: auto; margin: 8px 0; line-height: 1.5;
+}
+.markdown-body pre code { background: none; padding: 0; color: inherit; font-size: 13px; }
+.markdown-body table {
+  border-collapse: collapse; width: 100%; margin: 8px 0;
+}
+.markdown-body th, .markdown-body td {
+  border: 1px solid var(--c-border); padding: 6px 10px; text-align: left; font-size: 13px;
+}
+.markdown-body th { background: #f9fafb; font-weight: 600; }
+.markdown-body blockquote {
+  border-left: 3px solid #7c3aed; padding: 4px 12px; margin: 8px 0;
+  color: #6b7280; background: #f8f5ff;
+}
+.markdown-body hr { border: none; border-top: 1px solid var(--c-border); margin: 12px 0; }
+.markdown-body a { color: #7c3aed; }
+.markdown-body strong { font-weight: 600; }
+.markdown-body img { max-width: 100%; border-radius: 4px; }
 </style>
