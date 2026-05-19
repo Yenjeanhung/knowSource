@@ -33,6 +33,8 @@ const answerExThink = computed(() => {
 })
 
 const thinkExpanded = ref(false)
+const sourcesExpanded = ref(false)
+const expandedChunkIdx = ref(-1)
 
 /* 回答区域动态高度 */
 const answerBoxRef = ref(null)
@@ -51,6 +53,8 @@ watch([answerExThink, querying], () => {
   }
 })
 
+function pct(c) { return Math.round(c.score * 100) }
+
 async function loadKbs() {
   try { kbs.value = await fetchKbs() } catch {}
 }
@@ -63,6 +67,8 @@ async function runQuery() {
   chunks.value = []
   thinkBlocks.value = []
   thinkExpanded.value = false
+  sourcesExpanded.value = false
+  expandedChunkIdx.value = -1
   try {
     await queryRagStream(queryKbId.value, q, {
       onChunks(data) { chunks.value = data },
@@ -99,10 +105,6 @@ onMounted(loadKbs)
 
     <!-- Results -->
     <div class="results" v-if="answerRaw || chunks.length">
-      <div class="results-header" v-if="chunks.length">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        {{ chunks.length }} chunk{{ chunks.length > 1 ? 's' : '' }} retrieved
-      </div>
 
       <!-- Think Block -->
       <div class="think-card" v-for="(b, i) in thinkBlocks" :key="i">
@@ -113,6 +115,7 @@ onMounted(loadKbs)
         <div class="think-content markdown-body" v-show="thinkExpanded" v-html="renderMd(b.content)"></div>
       </div>
 
+      <!-- Answer -->
       <div class="answer-card" ref="answerBoxRef" v-if="answerExThink" :class="{ streaming: querying }">
         <h4>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/></svg>
@@ -123,7 +126,6 @@ onMounted(loadKbs)
         </div>
       </div>
 
-      <!-- Fallback: no think tags -->
       <div class="answer-card" ref="answerBoxRef" v-if="!answerExThink && answerRaw" :class="{ streaming: querying }">
         <h4>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/></svg>
@@ -134,12 +136,27 @@ onMounted(loadKbs)
         </div>
       </div>
 
-      <div v-for="(c, i) in chunks" :key="i" class="chunk-item">
-        <div class="chunk-header">
-          <span>{{ c.file_name }}</span>
-          <span class="chunk-score">{{ c.score.toFixed(4) }}</span>
+      <!-- Sources -->
+      <div class="sources" v-if="chunks.length">
+        <div class="sources-toggle" @click="sourcesExpanded = !sourcesExpanded">
+          <svg class="sources-icon" :class="{ open: sourcesExpanded }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          <span>Sources · {{ chunks.length }} file{{ chunks.length > 1 ? 's' : '' }}</span>
         </div>
-        <div class="chunk-text">{{ c.text }}</div>
+        <div class="sources-list" v-show="sourcesExpanded">
+          <div
+            v-for="(c, i) in chunks" :key="i"
+            class="source-chip"
+            :class="{ active: expandedChunkIdx === i }"
+            @click="expandedChunkIdx = expandedChunkIdx === i ? -1 : i"
+          >
+            <div class="source-chip-top">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span class="source-name">{{ c.file_name }}</span>
+              <span class="source-pct">{{ pct(c) }}%</span>
+            </div>
+            <div class="source-text" v-show="expandedChunkIdx === i">{{ c.text }}</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -160,14 +177,10 @@ onMounted(loadKbs)
 .query-row input { flex: 1; }
 
 .results { display: flex; flex-direction: column; gap: 12px; }
-.results-header { font-size: 13px; color: var(--c-secondary); display: flex; align-items: center; gap: 6px; }
 
 /* Think card */
 .think-card {
-  border: 1px solid #e2d9f3;
-  border-radius: var(--radius);
-  background: #f8f5ff;
-  overflow: hidden;
+  border: 1px solid #e2d9f3; border-radius: var(--radius); background: #f8f5ff; overflow: hidden;
 }
 .think-toggle {
   display: flex; align-items: center; gap: 6px;
@@ -179,34 +192,70 @@ onMounted(loadKbs)
 .think-icon { transition: transform 200ms; color: #7c3aed; }
 .think-icon.open { transform: rotate(180deg); }
 .think-content {
-  padding: 0 14px 12px;
-  font-size: 13px; line-height: 1.65; color: #6b7280;
-  border-top: 1px solid #e2d9f3;
-  padding-top: 10px;
+  padding: 0 14px 12px; font-size: 13px; line-height: 1.65; color: #6b7280;
+  border-top: 1px solid #e2d9f3; padding-top: 10px;
 }
 
+/* Answer card */
 .answer-card { border: 1px solid var(--c-border); border-radius: var(--radius); padding: 14px 16px; }
 .answer-card h4 { font-size: 13px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; color: var(--c-secondary); }
-.answer-card .answer-text {
-  font-size: 14px; line-height: 1.7;
-  overflow-y: auto;
-}
+.answer-card .answer-text { font-size: 14px; line-height: 1.7; overflow-y: auto; }
 
-/* streaming cursor via ::after on answer-card */
 .answer-card.streaming .markdown-body::after {
   content: '|';
   animation: blink 0.7s step-end infinite;
-  font-weight: 100;
-  color: var(--c-secondary);
+  font-weight: 100; color: var(--c-secondary);
 }
 @keyframes blink { 50% { opacity: 0; } }
 
-.chunk-item { border: 1px solid var(--c-border); border-radius: var(--radius); padding: 12px 14px; font-size: 13px; }
-.chunk-header { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px; color: var(--c-secondary); }
-.chunk-score { font-weight: 700; color: var(--c-accent); }
-.chunk-text { line-height: 1.6; }
+/* Sources */
+.sources {
+  border: 1px solid var(--c-border); border-radius: var(--radius); overflow: hidden;
+}
+.sources-toggle {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px; cursor: pointer; user-select: none;
+  font-size: 12px; color: var(--c-secondary); font-weight: 500;
+  transition: background 150ms;
+}
+.sources-toggle:hover { background: #f9fafb; }
+.sources-icon { transition: transform 200ms; color: var(--c-secondary); }
+.sources-icon.open { transform: rotate(180deg); }
 
-/* Markdown body styles (not scoped — apply to v-html content) */
+.sources-list {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  padding: 0 14px 12px;
+}
+.source-chip {
+  border: 1px solid var(--c-border); border-radius: var(--radius-sm);
+  background: #fafafa; cursor: pointer;
+  transition: border-color 150ms, background 150ms;
+  flex: 1 1 220px; min-width: 180px;
+}
+.source-chip:hover { border-color: #d0d0d0; background: #fff; }
+.source-chip.active { border-color: var(--c-fg); background: #fff; }
+
+.source-chip-top {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px; font-size: 12px;
+}
+.source-name {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--c-fg); font-weight: 500;
+}
+.source-pct {
+  font-size: 11px; color: var(--c-accent); font-weight: 700;
+  background: #eef2ff; padding: 1px 6px; border-radius: 10px;
+  flex-shrink: 0;
+}
+.source-text {
+  font-size: 12px; line-height: 1.6; color: var(--c-secondary);
+  padding: 0 10px 10px;
+  border-top: 1px solid var(--c-border);
+  margin-top: 0; padding-top: 8px;
+  white-space: pre-wrap;
+  max-height: 160px; overflow-y: auto;
+}
 </style>
 
 <style>
