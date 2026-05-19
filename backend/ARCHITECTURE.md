@@ -129,7 +129,7 @@ backend/
 ├── uploads/                # 上传文件存储（gitignore）
 ├── chunks/                 # 临时分片（gitignore）
 └── data/                   # 持久化数据（gitignore）
-    ├── minirag.db          # SQLite 数据库文件
+    ├── knowsource.db          # SQLite 数据库文件
     └── chroma/             # ChromaDB 持久化目录
 ```
 
@@ -148,7 +148,7 @@ class Settings(BaseSettings):
     PORT: int = 8000
 
     # 数据库
-    DATABASE_URL: str = "sqlite+aiosqlite:///./data/minirag.db"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./data/knowsource.db"
 
     # 向量存储
     CHROMA_PERSIST_DIR: str = "./data/chroma"
@@ -323,7 +323,7 @@ CREATE INDEX idx_chunks_file_id ON chunks(file_id);
 
 ```
 data/
-├── minirag.db          # SQLite 数据库
+├── knowsource.db          # SQLite 数据库
 └── chroma/             # ChromaDB 向量数据
 
 uploads/                # 原始上传文件
@@ -432,7 +432,7 @@ HOST=0.0.0.0
 PORT=8000
 
 # 数据库
-DATABASE_URL=sqlite+aiosqlite:///./data/minirag.db
+DATABASE_URL=sqlite+aiosqlite:///./data/knowsource.db
 
 # 向量存储
 CHROMA_PERSIST_DIR=./data/chroma
