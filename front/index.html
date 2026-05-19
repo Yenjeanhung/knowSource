@@ -677,7 +677,7 @@ function toggleKB(kbId) {
 // ─── File Upload ───────────────────────────────────────────────────────
 function handleFiles(kbId, files) {
   for (const file of files) {
-    const id = crypto.randomUUID();
+    const id = ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
     const fileObj = { id, name: file.name, size: file.size, status: 'pending', progress: 0, chunkCount: 0 };
     if (!state.uploads[kbId]) state.uploads[kbId] = [];
     state.uploads[kbId].push(fileObj);
