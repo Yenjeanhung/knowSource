@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MiniRAG</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --color-primary: #171717;
+    --color-on-primary: #FFFFFF;
+    --color-secondary: #404040;
+    --color-accent: #A16207;
+    --color-background: #FFFFFF;
+    --color-foreground: #171717;
+    --color-muted: #E8ECF0;
+    --color-muted-hover: #DDE1E6;
+    --color-border: #E5E5E5;
+    --color-destructive: #DC2626;
+    --color-ring: #171717;
+    --radius: 8px;
+    --radius-sm: 4px;
+    --transition: 150ms ease;
+  }
+
+  body {
+    font-family: 'Atkinson Hyperlegible', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--color-background);
+    color: var(--color-foreground);
+    line-height: 1.5;
+    min-height: 100dvh;
+  }
+
+  .app {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 24px 20px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .header svg { flex-shrink: 0; }
+  .header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+  .header .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); }
+
+  /* Upload Zone */
+  .upload-zone {
+    border: 2px dashed var(--color-border);
+    border-radius: var(--radius);
+    padding: 32px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color var(--transition), background var(--transition);
+    background: var(--color-muted);
+  }
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--color-primary);
+    background: var(--color-muted-hover);
+  }
+  .upload-zone svg { display: block; margin: 0 auto 8px; color: var(--color-secondary); }
+  .upload-zone .label { font-size: 15px; font-weight: 700; }
+  .upload-zone .hint { font-size: 13px; color: var(--color-secondary); margin-top: 4px; }
+  .upload-zone input[type="file"] { display: none; }
+
+  /* File List */
+  .file-list { display: flex; flex-direction: column; gap: 6px; }
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--color-muted);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    transition: background var(--transition);
+  }
+  .file-item:hover { background: var(--color-muted-hover); }
+  .file-item .file-icon { flex-shrink: 0; color: var(--color-secondary); }
+  .file-item .file-info { flex: 1; min-width: 0; }
+  .file-item .file-name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file-item .file-meta { font-size: 12px; color: var(--color-secondary); }
+  .file-item .file-status { flex-shrink: 0; font-size: 12px; }
+  .file-item .file-status.uploading { color: var(--color-accent); }
+  .file-item .file-status.done { color: #16a34a; }
+  .file-item .file-status.error { color: var(--color-destructive); }
+
+  .progress-bar {
+    width: 100%;
+    height: 3px;
+    background: var(--color-border);
+    border-radius: 2px;
+    margin-top: 4px;
+    overflow: hidden;
+    display: none;
+  }
+  .progress-bar.active { display: block; }
+  .progress-bar .fill {
+    height: 100%;
+    background: var(--color-primary);
+    border-radius: 2px;
+    transition: width 200ms ease;
+    width: 0%;
+  }
+
+  .file-item .remove-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-secondary);
+    padding: 2px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    transition: color var(--transition), background var(--transition);
+  }
+  .file-item .remove-btn:hover { color: var(--color-destructive); background: var(--color-muted-hover); }
+
+  /* Query Section */
+  .query-section { display: flex; flex-direction: column; gap: 12px; }
+  .query-section h3 {
+    font-size: 15px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .query-section h3 .badge {
+    font-size: 11px;
+    font-weight: 400;
+    background: var(--color-muted);
+    padding: 2px 8px;
+    border-radius: 10px;
+    color: var(--color-secondary);
+  }
+  .query-row { display: flex; gap: 8px; }
+  .query-row input {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color var(--transition);
+  }
+  .query-row input:focus { border-color: var(--color-primary); }
+  .query-row button {
+    padding: 10px 20px;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    border: none;
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity var(--transition), transform var(--transition);
+    white-space: nowrap;
+  }
+  .query-row button:hover { opacity: 0.85; }
+  .query-row button:active { transform: scale(0.97); }
+  .query-row button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  /* Results */
+  .results { display: flex; flex-direction: column; gap: 16px; }
+  .results-header { display: none; font-size: 13px; color: var(--color-secondary); }
+  .results-header.visible { display: flex; align-items: center; gap: 8px; }
+
+  .answer-card {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 16px;
+    display: none;
+  }
+  .answer-card.visible { display: block; }
+  .answer-card h4 { font-size: 14px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .answer-card .answer-text { font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+
+  .chunks-list { display: flex; flex-direction: column; gap: 8px; }
+  .chunk-item {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    font-size: 13px;
+    display: none;
+  }
+  .chunk-item.visible { display: block; }
+  .chunk-item .chunk-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: var(--color-secondary);
+  }
+  .chunk-item .chunk-score { font-weight: 700; color: var(--color-accent); }
+  .chunk-item .chunk-text { font-size: 13px; line-height: 1.6; color: var(--color-foreground); }
+
+  /* Loading */
+  .spinner {
+    display: none;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--color-border);
+    border-top-color: var(--color-primary);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+  .spinner.active { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Empty State */
+  .empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--color-secondary);
+  }
+  .empty svg { margin-bottom: 12px; color: var(--color-border); }
+  .empty .title { font-size: 15px; font-weight: 700; color: var(--color-foreground); margin-bottom: 4px; }
+  .empty .desc { font-size: 13px; }
+
+  /* Section label */
+  .section-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  @media (max-width: 480px) {
+    .app { padding: 16px 14px 32px; gap: 20px; }
+    .upload-zone { padding: 24px 16px; }
+    .query-row { flex-direction: column; }
+    .query-row button { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Header -->
+  <header class="header">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="2" width="20" height="20" rx="4"/>
+      <line x1="8" y1="8" x2="16" y2="8"/>
+      <line x1="8" y1="12" x2="16" y2="12"/>
+      <line x1="8" y1="16" x2="12" y2="16"/>
+    </svg>
+    <h1>MiniRAG</h1>
+    <div class="dot"></div>
+  </header>
+
+  <!-- Upload Zone -->
+  <section>
+    <div class="section-label">Files</div>
+    <div class="upload-zone" id="uploadZone">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17,8 12,3 7,8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <div class="label">Drop files or click to upload</div>
+      <div class="hint">Files are chunked locally before upload</div>
+      <input type="file" id="fileInput" multiple accept=".txt,.pdf,.md,.csv,.json,.docx,.html">
+    </div>
+  </section>
+
+  <!-- File List -->
+  <div class="file-list" id="fileList">
+    <div class="empty" id="emptyFiles">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14,2 14,8 20,8"/>
+      </svg>
+      <div class="title">No files uploaded</div>
+      <div class="desc">Upload documents to enable RAG retrieval</div>
+    </div>
+  </div>
+
+  <!-- Query Section -->
+  <section class="query-section">
+    <h3>
+      Query
+      <span class="badge" id="fileCount">0 files</span>
+    </h3>
+    <div class="query-row">
+      <input type="text" id="queryInput" placeholder="Ask a question about your documents..." disabled>
+      <button id="queryBtn" disabled>Search</button>
+    </div>
+  </section>
+
+  <!-- Loading -->
+  <div style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--color-secondary);">
+    <div class="spinner" id="searchSpinner"></div>
+    <span id="searchStatus"></span>
+  </div>
+
+  <!-- Results -->
+  <div class="results" id="results">
+    <div class="results-header" id="resultsHeader">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span id="resultsSummary"></span>
+    </div>
+
+    <!-- Answer -->
+    <div class="answer-card" id="answerCard">
+      <h4>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5"/></svg>
+        Answer
+      </h4>
+      <div class="answer-text" id="answerText"></div>
+    </div>
+
+    <!-- Retrieved Chunks -->
+    <div class="chunks-list" id="chunksList"></div>
+  </div>
+</div>
+
+<script>
+// --- State ---
+const API_BASE = 'http://localhost:8000';
+
+const state = {
+  files: [],          // { id, name, size, chunks, status, progress }
+  chunkSize: 512 * 1024, // 512KB per chunk
+};
+
+// --- DOM refs ---
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+
+const uploadZone = $('#uploadZone');
+const fileInput = $('#fileInput');
+const fileList = $('#fileList');
+const emptyFiles = $('#emptyFiles');
+const queryInput = $('#queryInput');
+const queryBtn = $('#queryBtn');
+const fileCount = $('#fileCount');
+const results = $('#results');
+const resultsHeader = $('#resultsHeader');
+const resultsSummary = $('#resultsSummary');
+const answerCard = $('#answerCard');
+const answerText = $('#answerText');
+const chunksList = $('#chunksList');
+const searchSpinner = $('#searchSpinner');
+const searchStatus = $('#searchStatus');
+
+// --- Upload Handlers ---
+uploadZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  handleFiles(e.dataTransfer.files);
+});
+
+function handleFiles(fileList) {
+  for (const file of fileList) {
+    const id = crypto.randomUUID();
+    const fileObj = { id, name: file.name, size: file.size, chunks: [], status: 'pending', progress: 0 };
+    state.files.push(fileObj);
+    renderFiles();
+    uploadFile(fileObj, file);
+  }
+  fileInput.value = '';
+}
+
+async function uploadFile(fileObj, file) {
+  fileObj.status = 'uploading';
+  renderFiles();
+
+  const totalChunks = Math.ceil(file.size / state.chunkSize);
+  const chunks = [];
+  for (let i = 0; i < totalChunks; i++) {
+    chunks.push(file.slice(i * state.chunkSize, (i + 1) * state.chunkSize));
+  }
+  fileObj.chunks = chunks;
+
+  // Upload chunks to backend
+  for (let i = 0; i < chunks.length; i++) {
+    await uploadChunk(fileObj, chunks[i], i, totalChunks);
+    fileObj.progress = Math.round(((i + 1) / totalChunks) * 100);
+    renderFiles();
+  }
+
+  fileObj.status = 'done';
+  renderFiles();
+  updateQueryState();
+}
+
+async function uploadChunk(fileObj, chunk, index, total) {
+  const form = new FormData();
+  form.append('file_id', fileObj.id);
+  form.append('file_name', fileObj.name);
+  form.append('file_size', fileObj.size);
+  form.append('chunk_index', index);
+  form.append('total_chunks', total);
+  form.append('chunk', chunk);
+  const res = await fetch(`${API_BASE}/api/upload/chunk`, { method: 'POST', body: form });
+  if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+  return res.json();
+}
+
+async function removeFile(id) {
+  try { await fetch(`${API_BASE}/api/files/${id}`, { method: 'DELETE' }); } catch (_) {}
+  state.files = state.files.filter(f => f.id !== id);
+  renderFiles();
+  updateQueryState();
+}
+
+// --- Rendering ---
+function renderFiles() {
+  if (state.files.length === 0) {
+    emptyFiles.style.display = '';
+    fileList.querySelectorAll('.file-item').forEach(el => el.remove());
+    return;
+  }
+  emptyFiles.style.display = 'none';
+
+  // Update existing + add new
+  const existingIds = new Set();
+  fileList.querySelectorAll('.file-item').forEach(el => {
+    const id = el.dataset.id;
+    existingIds.add(id);
+    const f = state.files.find(f => f.id === id);
+    if (!f) { el.remove(); return; }
+    updateFileItem(el, f);
+  });
+
+  state.files.forEach(f => {
+    if (!existingIds.has(f.id)) {
+      const el = createFileItem(f);
+      fileList.appendChild(el);
+    }
+  });
+}
+
+function createFileItem(f) {
+  const el = document.createElement('div');
+  el.className = 'file-item';
+  el.dataset.id = f.id;
+  updateFileItem(el, f);
+  return el;
+}
+
+function updateFileItem(el, f) {
+  const statusClass = f.status === 'uploading' ? 'uploading' : f.status === 'done' ? 'done' : 'error';
+  const statusText = f.status === 'uploading' ? `${f.progress}%` : f.status === 'done' ? 'Done' : 'Error';
+  const sizeStr = formatSize(f.size);
+  el.innerHTML = `
+    <svg class="file-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14,2 14,8 20,8"/>
+    </svg>
+    <div class="file-info">
+      <div class="file-name">${escapeHtml(f.name)}</div>
+      <div class="file-meta">${sizeStr} &middot; ${f.chunks.length || Math.ceil(f.size / state.chunkSize)} chunks</div>
+      <div class="progress-bar ${f.status === 'uploading' ? 'active' : ''}">
+        <div class="fill" style="width:${f.progress}%"></div>
+      </div>
+    </div>
+    <span class="file-status ${statusClass}">${statusText}</span>
+    <button class="remove-btn" onclick="removeFile('${f.id}')" title="Remove">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+  `;
+}
+
+function updateQueryState() {
+  const doneCount = state.files.filter(f => f.status === 'done').length;
+  fileCount.textContent = `${doneCount} file${doneCount !== 1 ? 's' : ''}`;
+  const canQuery = doneCount > 0;
+  queryInput.disabled = !canQuery;
+  queryBtn.disabled = !canQuery;
+  if (!canQuery) queryInput.placeholder = 'Upload files to enable queries...';
+  else queryInput.placeholder = 'Ask a question about your documents...';
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// --- RAG Query ---
+queryBtn.addEventListener('click', runQuery);
+queryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runQuery(); });
+
+async function runQuery() {
+  const query = queryInput.value.trim();
+  if (!query) return;
+
+  const doneFiles = state.files.filter(f => f.status === 'done');
+  if (doneFiles.length === 0) return;
+
+  searchSpinner.classList.add('active');
+  searchStatus.textContent = 'Searching...';
+  queryBtn.disabled = true;
+  hideResults();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        file_ids: doneFiles.map(f => f.id),
+        top_k: 5,
+      }),
+    });
+    if (!res.ok) throw new Error(`Query failed: ${res.status}`);
+    const data = await res.json();
+
+    const chunks = (data.chunks || []).map(c => ({
+      file: c.file_name,
+      text: c.text,
+      score: c.score.toFixed(4),
+    }));
+
+    displayResults(query, data.answer || 'No answer generated.', chunks);
+  } catch (err) {
+    displayResults(query, `Error: ${err.message}. Is the backend running?`, []);
+  }
+
+  searchSpinner.classList.remove('active');
+  searchStatus.textContent = '';
+  queryBtn.disabled = false;
+}
+
+function displayResults(query, answer, chunks) {
+  resultsHeader.classList.add('visible');
+  resultsSummary.textContent = `${chunks.length} chunks retrieved for "${query}"`;
+
+  answerCard.classList.add('visible');
+  answerText.textContent = answer;
+
+  chunksList.innerHTML = '';
+  chunks.forEach((chunk, i) => {
+    const el = document.createElement('div');
+    el.className = 'chunk-item visible';
+    el.innerHTML = `
+      <div class="chunk-header">
+        <span>${escapeHtml(chunk.file)} &middot; Chunk ${i + 1}</span>
+        <span class="chunk-score">${chunk.score}</span>
+      </div>
+      <div class="chunk-text">${escapeHtml(chunk.text)}</div>
+    `;
+    chunksList.appendChild(el);
+  });
+}
+
+function hideResults() {
+  resultsHeader.classList.remove('visible');
+  answerCard.classList.remove('visible');
+  chunksList.querySelectorAll('.chunk-item').forEach(el => el.classList.remove('visible'));
+}
+</script>
+</body>
+</html>

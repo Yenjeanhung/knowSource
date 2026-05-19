@@ -1,0 +1,8 @@
+MiniRAG is a Retrieval-Augmented Generation system.
+It supports chunked file upload for large documents.
+
+RAG combines retrieval and generation to produce accurate answers.
+The system splits files into chunks, indexes them, and retrieves relevant content.
+
+Vector embeddings enable semantic search across document collections.
+This prototype uses keyword matching as a simple demonstration.
