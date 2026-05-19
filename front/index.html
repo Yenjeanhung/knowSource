@@ -40,7 +40,7 @@
     padding: 24px 20px 40px;
     display: flex;
     flex-direction: column;
-    gap: 28px;
+    gap: 0;
   }
 
   /* Header */
@@ -49,17 +49,108 @@
     align-items: center;
     gap: 10px;
     padding-bottom: 16px;
-    border-bottom: 1px solid var(--color-border);
   }
   .header svg { flex-shrink: 0; }
   .header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
   .header .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); }
 
-  /* Upload Zone */
+  /* Tab Bar */
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--color-border);
+    margin-bottom: 24px;
+  }
+  .tab-btn {
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    cursor: pointer;
+    color: var(--color-secondary);
+    transition: color var(--transition), border-color var(--transition);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tab-btn:hover { color: var(--color-foreground); }
+  .tab-btn.active {
+    color: var(--color-foreground);
+    border-bottom-color: var(--color-primary);
+  }
+  .tab-btn .tab-icon { flex-shrink: 0; }
+
+  /* Tab content panels */
+  .tab-panel { display: none; }
+  .tab-panel.active { display: flex; flex-direction: column; gap: 20px; }
+
+  /* KB List */
+  .kb-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .kb-card {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color var(--transition);
+  }
+  .kb-card.expanded { border-color: var(--color-primary); }
+
+  .kb-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: background var(--transition);
+    user-select: none;
+  }
+  .kb-card-header:hover { background: var(--color-muted); }
+
+  .kb-card-header .kb-icon { flex-shrink: 0; color: var(--color-accent); }
+  .kb-card-header .kb-info { flex: 1; min-width: 0; }
+  .kb-card-header .kb-name { font-size: 15px; font-weight: 700; }
+  .kb-card-header .kb-meta { font-size: 12px; color: var(--color-secondary); }
+  .kb-card-header .kb-chevron {
+    flex-shrink: 0;
+    color: var(--color-secondary);
+    transition: transform var(--transition);
+    transform: rotate(-90deg);
+  }
+  .kb-card.expanded .kb-chevron { transform: rotate(0deg); }
+
+  .kb-card-header .kb-delete {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-secondary);
+    padding: 4px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    transition: color var(--transition);
+  }
+  .kb-card-header .kb-delete:hover { color: var(--color-destructive); }
+
+  /* KB Detail (file list inside expanded KB) */
+  .kb-detail {
+    display: none;
+    border-top: 1px solid var(--color-border);
+    padding: 14px;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .kb-card.expanded .kb-detail { display: flex; }
+
+  /* Upload Zone (inside KB) */
   .upload-zone {
     border: 2px dashed var(--color-border);
     border-radius: var(--radius);
-    padding: 32px 24px;
+    padding: 20px;
     text-align: center;
     cursor: pointer;
     transition: border-color var(--transition), background var(--transition);
@@ -69,13 +160,12 @@
     border-color: var(--color-primary);
     background: var(--color-muted-hover);
   }
-  .upload-zone svg { display: block; margin: 0 auto 8px; color: var(--color-secondary); }
-  .upload-zone .label { font-size: 15px; font-weight: 700; }
-  .upload-zone .hint { font-size: 13px; color: var(--color-secondary); margin-top: 4px; }
+  .upload-zone svg { display: block; margin: 0 auto 6px; color: var(--color-secondary); }
+  .upload-zone .label { font-size: 14px; font-weight: 700; }
+  .upload-zone .hint { font-size: 12px; color: var(--color-secondary); margin-top: 2px; }
   .upload-zone input[type="file"] { display: none; }
 
-  /* File List */
-  .file-list { display: flex; flex-direction: column; gap: 6px; }
+  /* File Items */
   .file-item {
     display: flex;
     align-items: center;
@@ -125,25 +215,61 @@
     align-items: center;
     transition: color var(--transition), background var(--transition);
   }
-  .file-item .remove-btn:hover { color: var(--color-destructive); background: var(--color-muted-hover); }
+  .file-item .remove-btn:hover { color: var(--color-destructive); }
 
-  /* Query Section */
-  .query-section { display: flex; flex-direction: column; gap: 12px; }
-  .query-section h3 {
-    font-size: 15px;
+  /* Create KB */
+  .create-kb-row {
+    display: flex;
+    gap: 8px;
+  }
+  .create-kb-row input {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color var(--transition);
+  }
+  .create-kb-row input:focus { border-color: var(--color-primary); }
+  .create-kb-row button {
+    padding: 10px 20px;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    border: none;
+    border-radius: var(--radius);
+    font-size: 14px;
     font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity var(--transition), transform var(--transition);
+    white-space: nowrap;
+  }
+  .create-kb-row button:hover { opacity: 0.85; }
+  .create-kb-row button:active { transform: scale(0.97); }
+  .create-kb-row button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  /* Q&A */
+  .qa-select-row {
     display: flex;
     align-items: center;
     gap: 8px;
   }
-  .query-section h3 .badge {
-    font-size: 11px;
-    font-weight: 400;
-    background: var(--color-muted);
-    padding: 2px 8px;
-    border-radius: 10px;
-    color: var(--color-secondary);
+  .qa-select-row select {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-family: inherit;
+    background: var(--color-background);
+    outline: none;
+    cursor: pointer;
+    transition: border-color var(--transition);
   }
+  .qa-select-row select:focus { border-color: var(--color-primary); }
+
   .query-row { display: flex; gap: 8px; }
   .query-row input {
     flex: 1;
@@ -231,20 +357,14 @@
   .empty .title { font-size: 15px; font-weight: 700; color: var(--color-foreground); margin-bottom: 4px; }
   .empty .desc { font-size: 13px; }
 
-  /* Section label */
-  .section-label {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--color-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
   @media (max-width: 480px) {
-    .app { padding: 16px 14px 32px; gap: 20px; }
-    .upload-zone { padding: 24px 16px; }
+    .app { padding: 16px 14px 32px; }
+    .tab-btn { padding: 10px 14px; font-size: 13px; }
+    .create-kb-row { flex-direction: column; }
+    .create-kb-row button { width: 100%; }
     .query-row { flex-direction: column; }
     .query-row button { width: 100%; }
+    .qa-select-row { flex-direction: column; align-items: stretch; }
   }
 </style>
 </head>
@@ -262,220 +382,286 @@
     <div class="dot"></div>
   </header>
 
-  <!-- Upload Zone -->
-  <section>
-    <div class="section-label">Files</div>
-    <div class="upload-zone" id="uploadZone">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="17,8 12,3 7,8"/>
-        <line x1="12" y1="3" x2="12" y2="15"/>
+  <!-- Tab Bar -->
+  <nav class="tab-bar">
+    <button class="tab-btn active" data-tab="kb">
+      <svg class="tab-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
       </svg>
-      <div class="label">Drop files or click to upload</div>
-      <div class="hint">Files are chunked locally before upload</div>
-      <input type="file" id="fileInput" multiple accept=".txt,.pdf,.md,.csv,.json,.docx,.html">
-    </div>
-  </section>
+      知识库
+    </button>
+    <button class="tab-btn" data-tab="qa">
+      <svg class="tab-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      问答
+    </button>
+  </nav>
 
-  <!-- File List -->
-  <div class="file-list" id="fileList">
-    <div class="empty" id="emptyFiles">
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-        <polyline points="14,2 14,8 20,8"/>
-      </svg>
-      <div class="title">No files uploaded</div>
-      <div class="desc">Upload documents to enable RAG retrieval</div>
+  <!-- Tab: Knowledge Bases -->
+  <div class="tab-panel active" id="panel-kb">
+    <!-- Create KB -->
+    <div class="create-kb-row">
+      <input type="text" id="kbNameInput" placeholder="New knowledge base name..." maxlength="50">
+      <button id="createKbBtn">Create</button>
+    </div>
+
+    <!-- KB List -->
+    <div class="kb-list" id="kbList">
+      <div class="empty" id="emptyKb">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        <div class="title">No knowledge bases</div>
+        <div class="desc">Create a knowledge base and upload documents</div>
+      </div>
     </div>
   </div>
 
-  <!-- Query Section -->
-  <section class="query-section">
-    <h3>
-      Query
-      <span class="badge" id="fileCount">0 files</span>
-    </h3>
+  <!-- Tab: Q&A -->
+  <div class="tab-panel" id="panel-qa">
+    <!-- KB Selector -->
+    <div class="qa-select-row">
+      <select id="kbSelect" disabled>
+        <option value="">-- Select a knowledge base --</option>
+      </select>
+    </div>
+
+    <!-- Query -->
     <div class="query-row">
-      <input type="text" id="queryInput" placeholder="Ask a question about your documents..." disabled>
+      <input type="text" id="queryInput" placeholder="Ask a question about the selected knowledge base..." disabled>
       <button id="queryBtn" disabled>Search</button>
     </div>
-  </section>
 
-  <!-- Loading -->
-  <div style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--color-secondary);">
-    <div class="spinner" id="searchSpinner"></div>
-    <span id="searchStatus"></span>
-  </div>
-
-  <!-- Results -->
-  <div class="results" id="results">
-    <div class="results-header" id="resultsHeader">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <span id="resultsSummary"></span>
+    <!-- Loading -->
+    <div style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--color-secondary);">
+      <div class="spinner" id="searchSpinner"></div>
+      <span id="searchStatus"></span>
     </div>
 
-    <!-- Answer -->
-    <div class="answer-card" id="answerCard">
-      <h4>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5"/></svg>
-        Answer
-      </h4>
-      <div class="answer-text" id="answerText"></div>
-    </div>
+    <!-- Results -->
+    <div class="results" id="results">
+      <div class="results-header" id="resultsHeader">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span id="resultsSummary"></span>
+      </div>
 
-    <!-- Retrieved Chunks -->
-    <div class="chunks-list" id="chunksList"></div>
+      <div class="answer-card" id="answerCard">
+        <h4>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5"/></svg>
+          Answer
+        </h4>
+        <div class="answer-text" id="answerText"></div>
+      </div>
+
+      <div class="chunks-list" id="chunksList"></div>
+    </div>
   </div>
 </div>
 
 <script>
-// --- State ---
+// ─── Constants & State ─────────────────────────────────────────────────
 const API_BASE = 'http://localhost:8000';
+const CHUNK_SIZE = 512 * 1024;
 
 const state = {
-  files: [],          // { id, name, size, chunks, status, progress }
-  chunkSize: 512 * 1024, // 512KB per chunk
+  kbs: [],
+  uploads: {},        // kb_id -> [{ id, name, size, status, progress }]
+  activeTab: 'kb',
+  expandedKbId: null,
 };
 
-// --- DOM refs ---
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => document.querySelectorAll(sel);
+// ─── DOM refs ──────────────────────────────────────────────────────────
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
 
-const uploadZone = $('#uploadZone');
-const fileInput = $('#fileInput');
-const fileList = $('#fileList');
-const emptyFiles = $('#emptyFiles');
-const queryInput = $('#queryInput');
-const queryBtn = $('#queryBtn');
-const fileCount = $('#fileCount');
-const results = $('#results');
-const resultsHeader = $('#resultsHeader');
-const resultsSummary = $('#resultsSummary');
-const answerCard = $('#answerCard');
-const answerText = $('#answerText');
-const chunksList = $('#chunksList');
-const searchSpinner = $('#searchSpinner');
-const searchStatus = $('#searchStatus');
-
-// --- Upload Handlers ---
-uploadZone.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
-
-uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
-uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
-uploadZone.addEventListener('drop', (e) => {
-  e.preventDefault();
-  uploadZone.classList.remove('drag-over');
-  handleFiles(e.dataTransfer.files);
+// ─── Tab switching ─────────────────────────────────────────────────────
+$$('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 
-function handleFiles(fileList) {
-  for (const file of fileList) {
-    const id = crypto.randomUUID();
-    const fileObj = { id, name: file.name, size: file.size, chunks: [], status: 'pending', progress: 0 };
-    state.files.push(fileObj);
-    renderFiles();
-    uploadFile(fileObj, file);
-  }
-  fileInput.value = '';
+function switchTab(tab) {
+  state.activeTab = tab;
+  $$('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  $$('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `panel-${tab}`));
+  if (tab === 'qa') refreshKbSelect();
 }
 
-async function uploadFile(fileObj, file) {
-  fileObj.status = 'uploading';
-  renderFiles();
-
-  const totalChunks = Math.ceil(file.size / state.chunkSize);
-  const chunks = [];
-  for (let i = 0; i < totalChunks; i++) {
-    chunks.push(file.slice(i * state.chunkSize, (i + 1) * state.chunkSize));
+// ─── API helpers ───────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: {} };
+  if (body && !(body instanceof FormData)) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  } else if (body instanceof FormData) {
+    opts.body = body;
   }
-  fileObj.chunks = chunks;
-
-  // Upload chunks to backend
-  for (let i = 0; i < chunks.length; i++) {
-    await uploadChunk(fileObj, chunks[i], i, totalChunks);
-    fileObj.progress = Math.round(((i + 1) / totalChunks) * 100);
-    renderFiles();
+  const res = await fetch(`${API_BASE}${path}`, opts);
+  if (!res.ok) {
+    const err = await res.text().catch(() => 'Unknown error');
+    throw new Error(`${res.status}: ${err}`);
   }
-
-  fileObj.status = 'done';
-  renderFiles();
-  updateQueryState();
-}
-
-async function uploadChunk(fileObj, chunk, index, total) {
-  const form = new FormData();
-  form.append('file_id', fileObj.id);
-  form.append('file_name', fileObj.name);
-  form.append('file_size', fileObj.size);
-  form.append('chunk_index', index);
-  form.append('total_chunks', total);
-  form.append('chunk', chunk);
-  const res = await fetch(`${API_BASE}/api/upload/chunk`, { method: 'POST', body: form });
-  if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
   return res.json();
 }
 
-async function removeFile(id) {
-  try { await fetch(`${API_BASE}/api/files/${id}`, { method: 'DELETE' }); } catch (_) {}
-  state.files = state.files.filter(f => f.id !== id);
-  renderFiles();
-  updateQueryState();
+// ─── KB Management ─────────────────────────────────────────────────────
+$('#createKbBtn').addEventListener('click', createKB);
+$('#kbNameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') createKB(); });
+
+async function createKB() {
+  const name = $('#kbNameInput').value.trim();
+  if (!name) return;
+  $('#createKbBtn').disabled = true;
+  try {
+    const kb = await api('POST', '/api/kb', { name });
+    state.kbs.push(kb);
+    state.uploads[kb.id] = [];
+    $('#kbNameInput').value = '';
+    renderKBList();
+    refreshKbSelect();
+  } catch (err) {
+    alert(`Failed to create knowledge base: ${err.message}`);
+  }
+  $('#createKbBtn').disabled = false;
 }
 
-// --- Rendering ---
-function renderFiles() {
-  if (state.files.length === 0) {
-    emptyFiles.style.display = '';
-    fileList.querySelectorAll('.file-item').forEach(el => el.remove());
+async function deleteKB(kbId, e) {
+  e.stopPropagation();
+  if (!confirm('Delete this knowledge base and all its files?')) return;
+  try {
+    await api('DELETE', `/api/kb/${kbId}`);
+    state.kbs = state.kbs.filter(k => k.id !== kbId);
+    delete state.uploads[kbId];
+    if (state.expandedKbId === kbId) state.expandedKbId = null;
+    renderKBList();
+    refreshKbSelect();
+  } catch (err) {
+    alert(`Failed to delete: ${err.message}`);
+  }
+}
+
+// ─── KB List Rendering ─────────────────────────────────────────────────
+function renderKBList() {
+  const container = $('#kbList');
+  const emptyKb = $('#emptyKb');
+
+  // Clear existing kb-cards
+  container.querySelectorAll('.kb-card').forEach(el => el.remove());
+
+  if (state.kbs.length === 0) {
+    emptyKb.style.display = '';
     return;
   }
-  emptyFiles.style.display = 'none';
+  emptyKb.style.display = 'none';
 
-  // Update existing + add new
+  state.kbs.forEach(kb => {
+    const uploads = state.uploads[kb.id] || [];
+    const doneCount = uploads.filter(f => f.status === 'done').length;
+    const card = document.createElement('div');
+    card.className = 'kb-card' + (state.expandedKbId === kb.id ? ' expanded' : '');
+    card.innerHTML = `
+      <div class="kb-card-header" data-kb-id="${kb.id}">
+        <svg class="kb-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        <div class="kb-info">
+          <div class="kb-name">${esc(kb.name)}</div>
+          <div class="kb-meta">${doneCount} file${doneCount !== 1 ? 's' : ''} &middot; ${fmtDate(kb.created_at)}</div>
+        </div>
+        <button class="kb-delete" data-kb-id="${kb.id}" title="Delete KB">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3,6 5,6 21,6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+          </svg>
+        </button>
+        <svg class="kb-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6,9 12,15 18,9"/>
+        </svg>
+      </div>
+      <div class="kb-detail">
+        <div class="upload-zone" data-kb-id="${kb.id}">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <div class="label">Drop files or click to add</div>
+          <div class="hint">Files are chunked before upload</div>
+          <input type="file" class="file-input" multiple accept=".txt,.pdf,.md,.csv,.json,.docx,.html">
+        </div>
+        <div class="kb-files" data-kb-id="${kb.id}">
+          ${uploads.length === 0 ? `<div class="empty" style="padding:20px"><div class="desc">No files yet</div></div>` : ''}
+        </div>
+      </div>
+    `;
+    container.appendChild(card);
+
+    // Render file items
+    const filesContainer = card.querySelector('.kb-files');
+    renderKBFiles(kb.id, filesContainer);
+  });
+
+  // Attach event listeners
+  container.querySelectorAll('.kb-card-header').forEach(h => {
+    h.addEventListener('click', () => toggleKB(h.dataset.kbId));
+  });
+  container.querySelectorAll('.kb-delete').forEach(btn => {
+    btn.addEventListener('click', (e) => deleteKB(btn.dataset.kbId, e));
+  });
+  container.querySelectorAll('.upload-zone').forEach(zone => {
+    const kbId = zone.dataset.kbId;
+    const fileInput = zone.querySelector('.file-input');
+    zone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => handleFiles(kbId, e.target.files));
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.classList.remove('drag-over');
+      handleFiles(kbId, e.dataTransfer.files);
+    });
+  });
+}
+
+function renderKBFiles(kbId, container) {
+  const uploads = state.uploads[kbId] || [];
   const existingIds = new Set();
-  fileList.querySelectorAll('.file-item').forEach(el => {
-    const id = el.dataset.id;
-    existingIds.add(id);
-    const f = state.files.find(f => f.id === id);
+  container.querySelectorAll('.file-item').forEach(el => {
+    const fid = el.dataset.fileId;
+    existingIds.add(fid);
+    const f = uploads.find(u => u.id === fid);
     if (!f) { el.remove(); return; }
     updateFileItem(el, f);
   });
-
-  state.files.forEach(f => {
+  uploads.forEach(f => {
     if (!existingIds.has(f.id)) {
-      const el = createFileItem(f);
-      fileList.appendChild(el);
+      container.querySelectorAll('.empty').forEach(e => e.remove());
+      const el = document.createElement('div');
+      el.className = 'file-item';
+      el.dataset.fileId = f.id;
+      updateFileItem(el, f);
+      el.querySelector('.remove-btn').addEventListener('click', () => removeFile(kbId, f.id));
+      container.appendChild(el);
     }
   });
-}
-
-function createFileItem(f) {
-  const el = document.createElement('div');
-  el.className = 'file-item';
-  el.dataset.id = f.id;
-  updateFileItem(el, f);
-  return el;
 }
 
 function updateFileItem(el, f) {
   const statusClass = f.status === 'uploading' ? 'uploading' : f.status === 'done' ? 'done' : 'error';
   const statusText = f.status === 'uploading' ? `${f.progress}%` : f.status === 'done' ? 'Done' : 'Error';
-  const sizeStr = formatSize(f.size);
+  const sizeStr = fmtSize(f.size);
   el.innerHTML = `
     <svg class="file-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
       <polyline points="14,2 14,8 20,8"/>
     </svg>
     <div class="file-info">
-      <div class="file-name">${escapeHtml(f.name)}</div>
-      <div class="file-meta">${sizeStr} &middot; ${f.chunks.length || Math.ceil(f.size / state.chunkSize)} chunks</div>
+      <div class="file-name">${esc(f.name)}</div>
+      <div class="file-meta">${sizeStr} &middot; ${f.chunkCount || Math.ceil(f.size / CHUNK_SIZE)} chunks</div>
       <div class="progress-bar ${f.status === 'uploading' ? 'active' : ''}">
         <div class="fill" style="width:${f.progress}%"></div>
       </div>
     </div>
     <span class="file-status ${statusClass}">${statusText}</span>
-    <button class="remove-btn" onclick="removeFile('${f.id}')" title="Remove">
+    <button class="remove-btn" title="Remove">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
       </svg>
@@ -483,99 +669,165 @@ function updateFileItem(el, f) {
   `;
 }
 
+function toggleKB(kbId) {
+  state.expandedKbId = state.expandedKbId === kbId ? null : kbId;
+  renderKBList();
+}
+
+// ─── File Upload ───────────────────────────────────────────────────────
+function handleFiles(kbId, files) {
+  for (const file of files) {
+    const id = crypto.randomUUID();
+    const fileObj = { id, name: file.name, size: file.size, status: 'pending', progress: 0, chunkCount: 0 };
+    if (!state.uploads[kbId]) state.uploads[kbId] = [];
+    state.uploads[kbId].push(fileObj);
+    renderKBList();
+    uploadFile(kbId, fileObj, file);
+  }
+}
+
+async function uploadFile(kbId, fileObj, file) {
+  fileObj.status = 'uploading';
+  renderKBList();
+
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  fileObj.chunkCount = totalChunks;
+
+  for (let i = 0; i < totalChunks; i++) {
+    const chunk = file.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+    const form = new FormData();
+    form.append('file_id', fileObj.id);
+    form.append('file_name', fileObj.name);
+    form.append('file_size', fileObj.size);
+    form.append('kb_id', kbId);
+    form.append('chunk_index', i);
+    form.append('total_chunks', totalChunks);
+    form.append('chunk', chunk);
+    await fetch(`${API_BASE}/api/upload/chunk`, { method: 'POST', body: form });
+    fileObj.progress = Math.round(((i + 1) / totalChunks) * 100);
+    renderKBList();
+  }
+
+  fileObj.status = 'done';
+  renderKBList();
+  refreshKbSelect();
+}
+
+async function removeFile(kbId, fileId) {
+  try { await api('DELETE', `/api/files/${fileId}`); } catch (_) {}
+  if (state.uploads[kbId]) {
+    state.uploads[kbId] = state.uploads[kbId].filter(f => f.id !== fileId);
+  }
+  renderKBList();
+  refreshKbSelect();
+}
+
+// ─── Q&A Tab ───────────────────────────────────────────────────────────
+function refreshKbSelect() {
+  const select = $('#kbSelect');
+  const doneKbs = state.kbs.filter(kb => {
+    const uploads = state.uploads[kb.id] || [];
+    return uploads.some(f => f.status === 'done');
+  });
+  select.innerHTML = '<option value="">-- Select a knowledge base --</option>';
+  doneKbs.forEach(kb => {
+    const opt = document.createElement('option');
+    opt.value = kb.id;
+    opt.textContent = `${kb.name} (${(state.uploads[kb.id] || []).filter(f => f.status === 'done').length} files)`;
+    select.appendChild(opt);
+  });
+  select.disabled = doneKbs.length === 0;
+  updateQueryState();
+}
+
+$('#kbSelect').addEventListener('change', updateQueryState);
+
 function updateQueryState() {
-  const doneCount = state.files.filter(f => f.status === 'done').length;
-  fileCount.textContent = `${doneCount} file${doneCount !== 1 ? 's' : ''}`;
-  const canQuery = doneCount > 0;
-  queryInput.disabled = !canQuery;
-  queryBtn.disabled = !canQuery;
-  if (!canQuery) queryInput.placeholder = 'Upload files to enable queries...';
-  else queryInput.placeholder = 'Ask a question about your documents...';
+  const kbId = $('#kbSelect').value;
+  const canQuery = !!kbId;
+  $('#queryInput').disabled = !canQuery;
+  $('#queryBtn').disabled = !canQuery;
+  if (!canQuery) {
+    $('#queryInput').placeholder = 'Select a knowledge base to start...';
+  } else {
+    $('#queryInput').placeholder = 'Ask a question about the selected documents...';
+  }
 }
 
-function formatSize(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-// --- RAG Query ---
-queryBtn.addEventListener('click', runQuery);
-queryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runQuery(); });
+$('#queryBtn').addEventListener('click', runQuery);
+$('#queryInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') runQuery(); });
 
 async function runQuery() {
-  const query = queryInput.value.trim();
-  if (!query) return;
+  const query = $('#queryInput').value.trim();
+  const kbId = $('#kbSelect').value;
+  if (!query || !kbId) return;
 
-  const doneFiles = state.files.filter(f => f.status === 'done');
-  if (doneFiles.length === 0) return;
-
-  searchSpinner.classList.add('active');
-  searchStatus.textContent = 'Searching...';
-  queryBtn.disabled = true;
+  $('#searchSpinner').classList.add('active');
+  $('#searchStatus').textContent = 'Searching...';
+  $('#queryBtn').disabled = true;
   hideResults();
 
   try {
-    const res = await fetch(`${API_BASE}/api/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query,
-        file_ids: doneFiles.map(f => f.id),
-        top_k: 5,
-      }),
-    });
-    if (!res.ok) throw new Error(`Query failed: ${res.status}`);
-    const data = await res.json();
-
-    const chunks = (data.chunks || []).map(c => ({
+    const data = await api('POST', '/api/query', { query, kb_id: kbId, top_k: 5 });
+    displayResults(query, data.answer, (data.chunks || []).map(c => ({
       file: c.file_name,
       text: c.text,
       score: c.score.toFixed(4),
-    }));
-
-    displayResults(query, data.answer || 'No answer generated.', chunks);
+    })));
   } catch (err) {
-    displayResults(query, `Error: ${err.message}. Is the backend running?`, []);
+    displayResults(query, `Error: ${err.message}`, []);
   }
 
-  searchSpinner.classList.remove('active');
-  searchStatus.textContent = '';
-  queryBtn.disabled = false;
+  $('#searchSpinner').classList.remove('active');
+  $('#searchStatus').textContent = '';
+  $('#queryBtn').disabled = false;
 }
 
 function displayResults(query, answer, chunks) {
-  resultsHeader.classList.add('visible');
-  resultsSummary.textContent = `${chunks.length} chunks retrieved for "${query}"`;
+  $('#resultsHeader').classList.add('visible');
+  $('#resultsSummary').textContent = `${chunks.length} chunks retrieved`;
 
-  answerCard.classList.add('visible');
-  answerText.textContent = answer;
+  $('#answerCard').classList.add('visible');
+  $('#answerText').textContent = answer;
 
-  chunksList.innerHTML = '';
+  const list = $('#chunksList');
+  list.innerHTML = '';
   chunks.forEach((chunk, i) => {
     const el = document.createElement('div');
     el.className = 'chunk-item visible';
     el.innerHTML = `
       <div class="chunk-header">
-        <span>${escapeHtml(chunk.file)} &middot; Chunk ${i + 1}</span>
+        <span>${esc(chunk.file)} &middot; Chunk ${i + 1}</span>
         <span class="chunk-score">${chunk.score}</span>
       </div>
-      <div class="chunk-text">${escapeHtml(chunk.text)}</div>
+      <div class="chunk-text">${esc(chunk.text)}</div>
     `;
-    chunksList.appendChild(el);
+    list.appendChild(el);
   });
 }
 
 function hideResults() {
-  resultsHeader.classList.remove('visible');
-  answerCard.classList.remove('visible');
-  chunksList.querySelectorAll('.chunk-item').forEach(el => el.classList.remove('visible'));
+  $('#resultsHeader').classList.remove('visible');
+  $('#answerCard').classList.remove('visible');
+  $('#chunksList').querySelectorAll('.chunk-item').forEach(el => el.classList.remove('visible'));
+}
+
+// ─── Utilities ─────────────────────────────────────────────────────────
+function esc(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fmtDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 </script>
 </body>

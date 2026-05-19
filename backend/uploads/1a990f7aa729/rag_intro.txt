@@ -1,0 +1,3 @@
+RAG systems use vector embeddings to enable semantic search.
+The retrieval-augmented generation pipeline combines document retrieval with LLM generation.
+MiniRAG supports knowledge base management with chunked file uploads.
