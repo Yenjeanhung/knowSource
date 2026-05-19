@@ -40,11 +40,13 @@ async function deleteKb(kbId) {
     <!-- Header -->
     <header class="header">
       <div class="logo">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="2" width="20" height="20" rx="4"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="12" y2="16"/>
+        <svg class="logo-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 20 9 12 22 4 9"/>
+          <line x1="12" y1="2" x2="12" y2="22" stroke-width="1.2" opacity="0.4"/>
+          <line x1="4" y1="9" x2="20" y2="9" stroke-width="1.2" opacity="0.4"/>
         </svg>
-        <h1>MiniRAG</h1>
-        <div class="dot"></div>
+        <h1>知源</h1>
+        <span class="logo-sub">KnowSource</span>
       </div>
     </header>
 
@@ -73,8 +75,9 @@ async function deleteKb(kbId) {
 
 .header { display: flex; align-items: center; gap: 10px; padding: 20px 0 16px; border-bottom: 1px solid var(--c-border); margin-bottom: 24px; }
 .header .logo { display: flex; align-items: center; gap: 8px; }
-.header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
-.header .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--c-accent); }
+.header h1 { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+.header .logo-icon { color: var(--c-fg); }
+.header .logo-sub { font-size: 11px; color: var(--c-secondary); font-weight: 500; letter-spacing: 0.5px; margin-left: -2px; }
 
 .tabs { display: flex; gap: 0; margin-bottom: 24px; }
 .tab {
