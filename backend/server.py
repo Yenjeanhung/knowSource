@@ -274,9 +274,10 @@ def _synthesize_answer(query: str, chunks: list[dict]) -> str:
 
 # ─── Serve frontend ────────────────────────────────────────────────────
 
-front_path = Path(__file__).parent.parent / "front"
-if front_path.exists():
-    app.mount("/", StaticFiles(directory=str(front_path), html=True), name="frontend")
+# Production: serve built assets from front/dist/
+front_dist = Path(__file__).parent.parent / "front" / "dist"
+if front_dist.exists():
+    app.mount("/", StaticFiles(directory=str(front_dist), html=True), name="frontend")
 
 
 if __name__ == "__main__":

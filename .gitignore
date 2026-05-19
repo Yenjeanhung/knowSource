@@ -23,6 +23,8 @@ docker-compose.*.yml
 dist/
 build/
 site/
+uploads/
+node_modules/
 
 # Logs / Reports
 *.log
