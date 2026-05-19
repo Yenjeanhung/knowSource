@@ -16,7 +16,7 @@ async def query_rag(req: QueryRequest, db: AsyncSession = Depends(get_db)):
     if not kb:
         raise HTTPException(404, "Knowledge base not found")
     return StreamingResponse(
-        RAGService.query_stream(req.kb_id, req.query, req.top_k),
+        RAGService.query_stream(req.kb_id, req.query),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

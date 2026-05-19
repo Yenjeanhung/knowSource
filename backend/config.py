@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int
     CHUNK_OVERLAP: int
 
+    # 召回
+    SIMILARITY_THRESHOLD: float = 0.3
+
     # 文件上传
     UPLOAD_DIR: str
     CHUNK_DIR: str

@@ -3,6 +3,7 @@ import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import settings
 from providers.embedding import create_embeddings
 from providers.vector_store import create_vector_store
 from providers.llm import create_llm
@@ -19,12 +20,22 @@ RAG_USER_TEMPLATE = """参考资料：
 
 请根据以上参考资料回答问题："""
 
+_RETRIEVAL_K = 50
+
+
+def _filter_by_score(docs_with_scores, threshold):
+    """过滤相似度低于阈值的结果。"""
+    return [
+        (doc, score) for doc, score in docs_with_scores
+        if (1 - float(score)) >= threshold
+    ]
+
 
 class RAGService:
 
     @staticmethod
     async def query(
-        db: AsyncSession, kb_id: str, query: str, top_k: int = 5,
+        db: AsyncSession, kb_id: str, query: str,
     ) -> dict:
         embeddings = create_embeddings()
         llm = create_llm()
@@ -33,10 +44,12 @@ class RAGService:
         try:
             vectorstore = create_vector_store(kb_id, embeddings)
             docs_with_scores = await asyncio.to_thread(
-                vectorstore.similarity_search_with_score, query, k=top_k,
+                vectorstore.similarity_search_with_score, query, k=_RETRIEVAL_K,
             )
         except Exception:
             docs_with_scores = []
+
+        docs_with_scores = _filter_by_score(docs_with_scores, settings.SIMILARITY_THRESHOLD)
 
         if not docs_with_scores:
             return {
@@ -52,7 +65,7 @@ class RAGService:
                 "file_id": doc.metadata.get("file_id", ""),
                 "file_name": doc.metadata.get("file_name", ""),
                 "text": doc.page_content[:500],
-                "score": round(1 - float(score), 4),  # cosine distance → similarity
+                "score": round(1 - float(score), 4),
             })
 
         # LLM 生成回答
@@ -73,7 +86,7 @@ class RAGService:
         }
 
     @staticmethod
-    async def query_stream(kb_id: str, query: str, top_k: int = 5):
+    async def query_stream(kb_id: str, query: str):
         """SSE 流式问答：先发 chunks，再逐 token 流式输出回答。"""
         embeddings = create_embeddings()
         llm = create_llm()
@@ -82,20 +95,21 @@ class RAGService:
         try:
             vectorstore = create_vector_store(kb_id, embeddings)
             docs_with_scores = await asyncio.to_thread(
-                vectorstore.similarity_search_with_score, query, k=top_k,
+                vectorstore.similarity_search_with_score, query, k=_RETRIEVAL_K,
             )
         except Exception:
             docs_with_scores = []
 
+        docs_with_scores = _filter_by_score(docs_with_scores, settings.SIMILARITY_THRESHOLD)
+
         chunks_result = []
-        if docs_with_scores:
-            for doc, score in docs_with_scores:
-                chunks_result.append({
-                    "file_id": doc.metadata.get("file_id", ""),
-                    "file_name": doc.metadata.get("file_name", ""),
-                    "text": doc.page_content[:500],
-                    "score": round(1 - float(score), 4),
-                })
+        for doc, score in docs_with_scores:
+            chunks_result.append({
+                "file_id": doc.metadata.get("file_id", ""),
+                "file_name": doc.metadata.get("file_name", ""),
+                "text": doc.page_content[:500],
+                "score": round(1 - float(score), 4),
+            })
 
         # 发送检索到的 chunks
         yield f"data: {json.dumps({'type': 'chunks', 'chunks': chunks_result}, ensure_ascii=False)}\n\n"

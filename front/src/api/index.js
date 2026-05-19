@@ -56,11 +56,11 @@ export async function getFileStatus(fileId) {
  * @param {(token: string) => void} onToken   每个 token 片段时触发
  * @param {number} topK
  */
-export async function queryRagStream(kbId, query, { onChunks, onToken }, topK = 5) {
+export async function queryRagStream(kbId, query, { onChunks, onToken }) {
   const res = await fetch(`${API}/api/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, kb_id: kbId, top_k: topK }),
+    body: JSON.stringify({ query, kb_id: kbId }),
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
 

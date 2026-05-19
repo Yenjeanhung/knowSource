@@ -14,4 +14,3 @@ class UpdateKBRequest(BaseModel):
 class QueryRequest(BaseModel):
     query: str
     kb_id: str
-    top_k: int = 5
