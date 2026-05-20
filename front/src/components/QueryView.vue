@@ -181,18 +181,31 @@ onMounted(loadKbs)
   <div class="query-section">
     <div class="kb-select">
       <label>选择知识库</label>
-      <select v-model="queryKbId">
-        <option value="" disabled>请选择知识库...</option>
-        <option v-for="kb in queryKbList" :key="kb.id" :value="kb.id">{{ kb.name }} ({{ kb.file_count }} 个文件)</option>
-      </select>
+      <div class="field-shell select-shell">
+        <span class="field-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.75 7.25A2.25 2.25 0 0 1 6 5h4.2c.6 0 1.16.24 1.58.66l1.06 1.09c.42.42.98.66 1.58.66H18A2.25 2.25 0 0 1 20.25 9.66v7.09A2.25 2.25 0 0 1 18 19H6a2.25 2.25 0 0 1-2.25-2.25V7.25Z"/><path d="M3.75 9.25h16.5"/></svg>
+        </span>
+        <select v-model="queryKbId">
+          <option value="" disabled>请选择知识库...</option>
+          <option v-for="kb in queryKbList" :key="kb.id" :value="kb.id">{{ kb.name }} ({{ kb.file_count }} 个文件)</option>
+        </select>
+        <span class="field-caret" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </span>
+      </div>
     </div>
 
     <div class="query-row">
-      <input type="text" v-model="queryText" placeholder="输入问题..." @keydown.enter="runQuery" :disabled="!queryKbId || querying">
-      <button class="btn primary" @click="runQuery" :disabled="!queryKbId || !queryText.trim() || querying">
-        <span class="spinner" v-if="querying"></span>
-        <template v-else>搜索</template>
-      </button>
+      <div class="field-shell search-shell" :class="{ disabled: !queryKbId || querying }">
+        <span class="field-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.65" y2="16.65"/></svg>
+        </span>
+        <input type="text" v-model="queryText" placeholder="输入问题..." @keydown.enter="runQuery" :disabled="!queryKbId || querying">
+        <button class="query-submit" @click="runQuery" :disabled="!queryKbId || !queryText.trim() || querying">
+          <span class="spinner" v-if="querying"></span>
+          <template v-else>搜索</template>
+        </button>
+      </div>
     </div>
 
     <div class="results" v-if="answerRaw || chunks.length">
@@ -279,11 +292,67 @@ onMounted(loadKbs)
 .query-section { display: flex; flex-direction: column; gap: 16px; }
 .kb-select { display: flex; flex-direction: column; gap: 6px; }
 .kb-select label { font-size: 13px; font-weight: 600; color: var(--c-secondary); }
-.kb-select select { padding: 8px 12px; border: 1px solid var(--c-border); border-radius: var(--radius-sm); font-size: 14px; font-family: var(--font); outline: none; background: var(--c-bg); transition: border-color 150ms; cursor: pointer; }
-.kb-select select:focus { border-color: var(--c-fg); }
+.field-shell {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 52px; border: 1px solid #e8e5df; border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(249,247,243,0.98));
+  box-shadow: 0 1px 0 rgba(255,255,255,0.92) inset, 0 10px 28px rgba(23, 23, 23, 0.035);
+  transition: border-color 180ms, box-shadow 180ms, transform 180ms;
+}
+.field-shell:hover {
+  border-color: #d9d2c7;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.96) inset, 0 14px 32px rgba(23, 23, 23, 0.05);
+}
+.field-shell:focus-within {
+  border-color: #c9a46a;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.96) inset,
+    0 0 0 4px rgba(161, 98, 7, 0.08),
+    0 16px 36px rgba(161, 98, 7, 0.08);
+}
+.field-shell.disabled { opacity: 0.72; }
+.field-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; margin-left: 10px; flex-shrink: 0;
+  border-radius: 12px; color: #8b7c67;
+  background: linear-gradient(180deg, #fff, #f4efe6);
+  border: 1px solid rgba(161, 98, 7, 0.12);
+}
 
-.query-row { display: flex; gap: 8px; }
-.query-row input { flex: 1; }
+.select-shell { position: relative; padding-right: 12px; }
+.kb-select select {
+  flex: 1; width: 100%; min-width: 0;
+  border: 0; outline: none; appearance: none; box-shadow: none;
+  background: transparent; padding: 0 40px 0 0;
+  font-size: 15px; font-family: var(--font); color: var(--c-fg); cursor: pointer;
+}
+.field-caret {
+  position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+  color: #8b7c67; pointer-events: none;
+}
+
+.query-row { display: flex; }
+.search-shell { width: 100%; padding-right: 8px; }
+.query-row input {
+  flex: 1; min-width: 0; border: 0; outline: none; box-shadow: none;
+  background: transparent; padding: 0; font-size: 15px;
+}
+.query-row input::placeholder { color: #b3ab9f; }
+.query-submit {
+  border: 0; outline: none; cursor: pointer; flex-shrink: 0;
+  min-width: 92px; height: 40px; padding: 0 18px; border-radius: 12px;
+  background: linear-gradient(135deg, #171717, #3a342b);
+  color: #fff; font-size: 14px; font-weight: 700; font-family: var(--font);
+  box-shadow: 0 10px 24px rgba(23, 23, 23, 0.16);
+  transition: transform 150ms, box-shadow 150ms, opacity 150ms;
+}
+.query-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(23, 23, 23, 0.22);
+}
+.query-submit:disabled {
+  opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none;
+}
 
 .results { display: flex; flex-direction: column; gap: 12px; }
 
@@ -329,6 +398,9 @@ onMounted(loadKbs)
 .source-text { font-size: 12px; line-height: 1.6; color: var(--c-secondary); padding: 0 10px 10px; border-top: 1px solid var(--c-border); padding-top: 8px; white-space: pre-wrap; max-height: 140px; overflow-y: auto; }
 
 @media (max-width: 720px) {
+  .field-shell { min-height: 48px; border-radius: 14px; }
+  .field-icon { width: 34px; height: 34px; margin-left: 8px; }
+  .query-submit { min-width: 78px; height: 36px; padding: 0 14px; }
   .content-row { flex-direction: column; }
   .sources-col { width: 100%; max-height: 360px; }
 }
