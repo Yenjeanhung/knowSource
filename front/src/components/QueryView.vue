@@ -233,6 +233,10 @@ onMounted(loadKbs)
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
             来源 · {{ chunks.length }}
           </div>
+          <div class="sources-hint">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 16 12 12"/><polyline points="12 8 12.01 8"/></svg>
+            展开分片后双击内容可预览原文
+          </div>
           <div class="sources-scroll">
             <div
               v-for="(c, i) in chunks" :key="i"
@@ -243,13 +247,13 @@ onMounted(loadKbs)
               @mouseenter="hoveredChunk = i + 1"
               @mouseleave="hoveredChunk = null"
             >
-              <div class="source-chip-top" @click="onSourceClick(i)" @dblclick="onSourceDblClick(c)">
+              <div class="source-chip-top" @click="onSourceClick(i)">
                 <span class="source-idx" :style="{ background: chunkColor(i) }">{{ i + 1 }}</span>
                 <span class="source-name">{{ c.file_name }}</span>
                 <span class="source-pct">{{ pct(c) }}%</span>
                 <svg class="source-chevron" :class="{ open: expandedSources[i] }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
               </div>
-              <div class="source-text" v-show="expandedSources[i]">{{ c.text }}</div>
+              <div class="source-text" v-show="expandedSources[i]" @dblclick.stop="onSourceDblClick(c)">{{ c.text }}</div>
             </div>
           </div>
         </div>
@@ -303,6 +307,11 @@ onMounted(loadKbs)
 
 .sources-col { width: 240px; flex-shrink: 0; border: 1px solid var(--c-border); border-radius: var(--radius); overflow: hidden; max-height: calc(100vh - 200px); display: flex; flex-direction: column; }
 .sources-header { display: flex; align-items: center; gap: 6px; padding: 10px 14px; font-size: 12px; color: var(--c-secondary); font-weight: 600; border-bottom: 1px solid var(--c-border); flex-shrink: 0; }
+.sources-hint {
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 14px; font-size: 10px; color: var(--c-secondary);
+  border-bottom: 1px solid var(--c-border); background: #fafafa;
+}
 .sources-scroll { overflow-y: auto; flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
 
 .source-chip { border: 1px solid var(--c-border); border-radius: var(--radius-sm); background: #fafafa; transition: border-color 150ms, background 150ms, box-shadow 150ms; border-left: 3px solid var(--src-color); }
