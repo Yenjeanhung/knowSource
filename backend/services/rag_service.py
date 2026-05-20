@@ -11,6 +11,8 @@ from providers.llm import create_llm
 RAG_SYSTEM_PROMPT = (
     "你是一个知识库问答助手。请根据以下参考资料回答用户的问题。"
     "如果资料中没有相关信息，请如实说明，不要编造答案。"
+    "回答时必须在引用资料的位置标注来源编号，格式为[来源1]、[来源2]等，"
+    "编号对应参考资料的序号。每个引用了资料的事实或观点都应标注来源。"
 )
 
 RAG_USER_TEMPLATE = """参考资料：
@@ -18,7 +20,7 @@ RAG_USER_TEMPLATE = """参考资料：
 
 用户问题：{question}
 
-请根据以上参考资料回答问题："""
+请根据以上参考资料回答问题，引用资料时标注[来源N]："""
 
 _RETRIEVAL_K = 50
 
@@ -58,22 +60,25 @@ class RAGService:
                 "chunks": [],
             }
 
-        # 构建上下文
+        # 构建上下文（带编号）
         chunks_result = []
-        for doc, score in docs_with_scores:
+        context_parts = []
+        for idx, (doc, score) in enumerate(docs_with_scores):
             chunks_result.append({
                 "file_id": doc.metadata.get("file_id", ""),
                 "file_name": doc.metadata.get("file_name", ""),
                 "text": doc.page_content[:500],
                 "score": round(1 - float(score), 4),
+                "index": idx + 1,
                 "start_offset": doc.metadata.get("start_offset"),
                 "end_offset": doc.metadata.get("end_offset"),
                 "page_number": doc.metadata.get("page_number"),
                 "file_ext": doc.metadata.get("file_ext", ""),
             })
+            context_parts.append(f"[来源{idx + 1}]\n{doc.page_content}")
 
         # LLM 生成回答
-        context_text = "\n\n".join(doc.page_content for doc, _ in docs_with_scores)
+        context_text = "\n\n".join(context_parts)
         prompt = RAG_USER_TEMPLATE.format(context=context_text, question=query)
 
         from langchain_core.messages import SystemMessage, HumanMessage
