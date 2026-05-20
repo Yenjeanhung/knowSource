@@ -22,6 +22,7 @@ const loading = ref(false)
 const error = ref('')
 const textContent = ref('')
 const highlightRef = ref(null)
+const previewBodyRef = ref(null)
 const canvasRef = ref(null)
 const textLayerRef = ref(null)
 const pdfScale = ref(1.5)
@@ -188,6 +189,13 @@ function highlightInTextLayer(textLayerDiv) {
     bar.style.cssText = `position:absolute;left:-4px;right:-4px;top:${y - 1}px;height:${h + 2}px;background:rgba(59,130,246,0.13);border-radius:2px;`
     hl.appendChild(bar)
   }
+
+  const firstBar = hl.firstElementChild
+  const previewBody = previewBodyRef.value
+  if (firstBar && previewBody) {
+    const targetTop = wrap.offsetTop + firstBar.offsetTop - Math.max(40, previewBody.clientHeight * 0.2)
+    previewBody.scrollTop = Math.max(0, targetTop)
+  }
 }
 
 function mapCleanToOrig(origText, cleanPos) {
@@ -304,7 +312,7 @@ function onClose() {
         <button class="pdf-ctrl-btn" @click="pdfZoomIn" title="放大">+</button>
       </div>
 
-      <div class="preview-body">
+      <div class="preview-body" ref="previewBodyRef">
         <!-- PDF -->
         <template v-if="isPdf">
           <div class="pdf-viewport">
