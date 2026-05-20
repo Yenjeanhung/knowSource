@@ -31,7 +31,16 @@ const pdfTotalPages = ref(0)
 let pdfDoc = null
 let renderTask = null
 
-const isPdf = computed(() => props.fileExt === '.pdf')
+const normalizedExt = computed(() => {
+  const ext = (props.fileExt || '').trim().toLowerCase()
+  if (ext) return ext.startsWith('.') ? ext : `.${ext}`
+
+  const name = (props.fileName || '').trim().toLowerCase()
+  const dot = name.lastIndexOf('.')
+  return dot >= 0 ? name.slice(dot) : ''
+})
+
+const isPdf = computed(() => normalizedExt.value === '.pdf')
 
 /* ---- PDF preview ---- */
 
