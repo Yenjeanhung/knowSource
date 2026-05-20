@@ -165,6 +165,10 @@ onMounted(loadKbs)
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
             来源 · {{ chunks.length }}
           </div>
+          <div class="sources-hint">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            双击卡片预览原文位置
+          </div>
           <div class="sources-scroll">
             <div
               v-for="(c, i) in chunks" :key="i"
@@ -268,6 +272,14 @@ onMounted(loadKbs)
   border-bottom: 1px solid var(--c-border);
   flex-shrink: 0;
 }
+.sources-hint {
+  font-size: 10px; color: #b0b0b0;
+  padding: 4px 10px 6px;
+  border-bottom: 1px solid var(--c-border);
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: 4px;
+  user-select: none;
+}
 .sources-scroll {
   overflow-y: auto; flex: 1;
   padding: 8px;
@@ -276,7 +288,7 @@ onMounted(loadKbs)
 
 .source-chip {
   border: 1px solid var(--c-border); border-radius: var(--radius-sm);
-  background: #fafafa;
+  background: #fafafa; cursor: pointer;
   transition: border-color 150ms, background 150ms;
 }
 .source-chip:hover { border-color: #d0d0d0; }
