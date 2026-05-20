@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch, reactive, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, reactive, nextTick } from 'vue'
 import { marked } from 'marked'
 import { fetchKbs, queryRagStream } from '../api'
 import PreviewModal from './PreviewModal.vue'
@@ -10,8 +10,14 @@ const queryText = ref('')
 const querying = ref(false)
 const answerRaw = ref('')
 const chunks = ref([])
+const kbSelectRef = ref(null)
+const kbDropdownOpen = ref(false)
 
 const queryKbList = computed(() => kbs.value.filter(kb => kb.file_count > 0))
+const selectedKb = computed(() => queryKbList.value.find(kb => kb.id === queryKbId.value) || null)
+const selectedKbLabel = computed(() => selectedKb.value
+  ? `${selectedKb.value.name} (${selectedKb.value.file_count} 个文件)`
+  : '请选择知识库...')
 
 function renderMd(text) {
   if (!text) return ''
@@ -174,24 +180,60 @@ async function runQuery() {
   querying.value = false
 }
 
+function toggleKbDropdown() {
+  kbDropdownOpen.value = !kbDropdownOpen.value
+}
+
+function selectKb(kbId) {
+  queryKbId.value = kbId
+  kbDropdownOpen.value = false
+}
+
+function onWindowPointerDown(e) {
+  if (kbSelectRef.value && !kbSelectRef.value.contains(e.target)) {
+    kbDropdownOpen.value = false
+  }
+}
+
 onMounted(loadKbs)
+onMounted(() => window.addEventListener('pointerdown', onWindowPointerDown))
+onBeforeUnmount(() => window.removeEventListener('pointerdown', onWindowPointerDown))
 </script>
 
 <template>
   <div class="query-section">
     <div class="kb-select">
       <label>选择知识库</label>
-      <div class="field-shell select-shell">
-        <span class="field-icon" aria-hidden="true">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.75 7.25A2.25 2.25 0 0 1 6 5h4.2c.6 0 1.16.24 1.58.66l1.06 1.09c.42.42.98.66 1.58.66H18A2.25 2.25 0 0 1 20.25 9.66v7.09A2.25 2.25 0 0 1 18 19H6a2.25 2.25 0 0 1-2.25-2.25V7.25Z"/><path d="M3.75 9.25h16.5"/></svg>
-        </span>
-        <select v-model="queryKbId">
-          <option value="" disabled>请选择知识库...</option>
-          <option v-for="kb in queryKbList" :key="kb.id" :value="kb.id">{{ kb.name }} ({{ kb.file_count }} 个文件)</option>
-        </select>
-        <span class="field-caret" aria-hidden="true">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </span>
+      <div class="kb-picker" ref="kbSelectRef">
+        <button
+          type="button"
+          class="field-shell select-shell select-trigger"
+          :class="{ open: kbDropdownOpen }"
+          @click="toggleKbDropdown"
+        >
+          <span class="field-icon" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.75 7.25A2.25 2.25 0 0 1 6 5h4.2c.6 0 1.16.24 1.58.66l1.06 1.09c.42.42.98.66 1.58.66H18A2.25 2.25 0 0 1 20.25 9.66v7.09A2.25 2.25 0 0 1 18 19H6a2.25 2.25 0 0 1-2.25-2.25V7.25Z"/><path d="M3.75 9.25h16.5"/></svg>
+          </span>
+          <span class="select-value" :class="{ placeholder: !selectedKb }">{{ selectedKbLabel }}</span>
+          <span class="field-caret" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+        </button>
+
+        <div v-if="kbDropdownOpen" class="kb-dropdown">
+          <button type="button" class="kb-option kb-option-placeholder" @click="selectKb('')">请选择知识库...</button>
+          <button
+            v-for="kb in queryKbList"
+            :key="kb.id"
+            type="button"
+            class="kb-option"
+            :class="{ active: kb.id === queryKbId }"
+            @click="selectKb(kb.id)"
+          >
+            <span class="kb-option-name">{{ kb.name }}</span>
+            <span class="kb-option-meta">{{ kb.file_count }} 个文件</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -319,16 +361,47 @@ onMounted(loadKbs)
   border: 1px solid rgba(161, 98, 7, 0.12);
 }
 
+.kb-picker { position: relative; }
 .select-shell { position: relative; padding-right: 12px; }
-.kb-select select {
-  flex: 1; width: 100%; min-width: 0;
-  border: 0; outline: none; appearance: none; box-shadow: none;
-  background: transparent; padding: 0 40px 0 0;
-  font-size: 15px; font-family: var(--font); color: var(--c-fg); cursor: pointer;
+.select-trigger {
+  width: 100%; justify-content: flex-start; text-align: left;
+  padding: 0 12px 0 0; cursor: pointer;
 }
+.select-trigger.open .field-caret { transform: translateY(-50%) rotate(180deg); }
+.select-value {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 15px; color: var(--c-fg);
+}
+.select-value.placeholder { color: #b3ab9f; }
 .field-caret {
   position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
-  color: #8b7c67; pointer-events: none;
+  color: #8b7c67; pointer-events: none; transition: transform 180ms ease;
+}
+.kb-dropdown {
+  position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 20;
+  padding: 8px; border: 1px solid #ebe6dc; border-radius: 18px;
+  background: rgba(255,255,255,0.98);
+  box-shadow: 0 18px 40px rgba(23, 23, 23, 0.08);
+  backdrop-filter: blur(10px);
+}
+.kb-option {
+  width: 100%; border: 0; background: transparent; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; border-radius: 12px; text-align: left;
+  color: var(--c-fg); transition: background 150ms, color 150ms;
+}
+.kb-option:hover { background: #f7f4ee; }
+.kb-option.active {
+  background: #f3ede3; color: #171717; font-weight: 600;
+}
+.kb-option-placeholder {
+  color: #a8a091; font-weight: 500;
+}
+.kb-option-name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.kb-option-meta {
+  flex-shrink: 0; font-size: 12px; color: #9a8f7e;
 }
 
 .query-row { display: flex; }
