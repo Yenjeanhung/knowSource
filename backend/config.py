@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     LLM_TEMPERATURE: float
 
     # 分块
+    CHUNK_STRATEGY: Literal["fixed", "semantic", "sentence"] = "fixed"
     CHUNK_SIZE: int
     CHUNK_OVERLAP: int
 
