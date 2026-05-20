@@ -43,7 +43,7 @@ const route = useRoute()
 
 <style scoped>
 .app-shell {
-  display: flex; min-height: 100dvh; max-width: 1152px; margin: 0 auto;
+  display: flex; min-height: 100dvh; max-width: 1152px; margin: 0;
 }
 
 .sidebar {
