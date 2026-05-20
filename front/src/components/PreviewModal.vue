@@ -149,12 +149,35 @@ function highlightInTextLayer(textLayerDiv) {
   const matchOrigStart = mapCleanToOrig(fullText, matchCleanStart)
   const matchOrigEnd = mapCleanToOrig(fullText, matchCleanEnd)
 
+  // Collect Y positions of matched spans for full-line highlight
+  const wrap = textLayerDiv.parentElement
+  const wrapRect = wrap.getBoundingClientRect()
+
+  const lineYs = new Map()
   for (const sd of spanData) {
     if (sd.start < matchOrigEnd && sd.end > matchOrigStart) {
-      sd.span.style.backgroundColor = 'rgba(254, 240, 138, 0.85)'
-      sd.span.style.boxShadow = '0 0 0 2px rgba(254, 200, 50, 0.5)'
-      sd.span.style.borderRadius = '2px'
+      const rect = sd.span.getBoundingClientRect()
+      const y = Math.round(rect.top - wrapRect.top)
+      if (!lineYs.has(y)) {
+        lineYs.set(y, rect.height)
+      }
     }
+  }
+
+  // Create highlight overlay with full-width line bars
+  let hl = wrap.querySelector('.pdf-hl')
+  if (!hl) {
+    hl = document.createElement('div')
+    hl.className = 'pdf-hl'
+    hl.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:1;'
+    wrap.insertBefore(hl, textLayerDiv)
+  }
+  hl.innerHTML = ''
+
+  for (const [y, h] of lineYs) {
+    const bar = document.createElement('div')
+    bar.style.cssText = `position:absolute;left:-4px;right:-4px;top:${y - 1}px;height:${h + 2}px;background:rgba(59,130,246,0.13);border-radius:2px;`
+    hl.appendChild(bar)
   }
 }
 
