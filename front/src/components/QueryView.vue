@@ -26,6 +26,12 @@ function renderMd(text) {
 
 const CITE_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#8b5cf6', '#14b8a6']
 function chunkColor(idx) { return CITE_COLORS[idx % CITE_COLORS.length] }
+function sourceAccent(idx) {
+  const total = Math.max(chunks.value.length - 1, 1)
+  const t = Math.min(idx / total, 1)
+  const lightness = 60 + t * 24
+  return `hsl(244 72% ${lightness}%)`
+}
 
 // ---------- 思考过程 ----------
 // 兼容 Qwen <think>...</think>，DeepSeek 不用此格式
@@ -298,12 +304,12 @@ onBeforeUnmount(() => window.removeEventListener('pointerdown', onWindowPointerD
               :id="`src-${i + 1}`"
               class="source-chip"
               :class="{ active: expandedSources[i], highlight: hoveredChunk === (i + 1) }"
-              :style="{ '--src-color': chunkColor(i) }"
+              :style="{ '--src-color': sourceAccent(i) }"
               @mouseenter="hoveredChunk = i + 1"
               @mouseleave="hoveredChunk = null"
             >
               <div class="source-chip-top" @click="onSourceClick(i)">
-                <span class="source-idx" :style="{ background: chunkColor(i) }">{{ i + 1 }}</span>
+                <span class="source-idx" :style="{ background: sourceAccent(i) }">{{ i + 1 }}</span>
                 <span class="source-name">{{ c.file_name }}</span>
                 <span class="source-pct">{{ pct(c) }}%</span>
                 <svg class="source-chevron" :class="{ open: expandedSources[i] }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
