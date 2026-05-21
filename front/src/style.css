@@ -177,11 +177,14 @@ textarea {
   color: #171717 !important;
 }
 
-:root[data-theme='dark'] .source-pct,
 :root[data-theme='dark'] .test-score {
   color: #2b1700 !important;
   background: #f7c66a !important;
   box-shadow: inset 0 0 0 1px rgba(120, 69, 3, 0.22);
+}
+
+:root[data-theme='dark'] .source-pct {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 :root[data-theme='dark'] .markdown-body code {

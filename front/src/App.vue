@@ -208,11 +208,11 @@ onMounted(() => {
 }
 
 .sidebar {
-  width: 118px;
+  width: 80px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  padding: 12px 10px;
+  padding: 12px 6px;
   position: sticky;
   top: 0;
   height: 100dvh;
@@ -227,7 +227,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  justify-content: flex-start;
+  justify-content: center;
   padding-bottom: 10px;
 }
 
@@ -266,10 +266,11 @@ onMounted(() => {
 .side-brand {
   position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 4px;
   min-height: 48px;
-  padding: 0 12px;
+  padding: 8px 6px;
   border-radius: 14px;
   color: var(--c-secondary);
   text-decoration: none;
@@ -304,9 +305,10 @@ onMounted(() => {
 
 .side-label,
 .brand-text {
-  font-size: 14px;
+  font-size: 11px;
   font-weight: inherit;
   white-space: nowrap;
+  text-align: center;
 }
 
 .side-brand {
@@ -318,14 +320,14 @@ onMounted(() => {
 }
 
 .brand-text {
-  font-size: 13px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--c-fg);
 }
 
 .side-hint {
   position: absolute;
-  left: calc(100% + 10px);
+  left: calc(100% + 8px);
   top: 50%;
   transform: translateY(-50%) translateX(-4px);
   padding: 7px 10px;
@@ -366,9 +368,9 @@ onMounted(() => {
 }
 
 .is-collapsed .sidebar {
-  width: 72px;
-  padding-left: 8px;
-  padding-right: 8px;
+  width: 64px;
+  padding-left: 6px;
+  padding-right: 6px;
 }
 
 .is-collapsed .sidebar-top {
@@ -398,9 +400,9 @@ onMounted(() => {
 
 @media (max-width: 640px) {
   .sidebar {
-    width: 72px;
-    padding-left: 8px;
-    padding-right: 8px;
+    width: 64px;
+    padding-left: 6px;
+    padding-right: 6px;
   }
 
   .sidebar-top {

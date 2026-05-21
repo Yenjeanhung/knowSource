@@ -160,6 +160,14 @@ watch([answerExThink, querying], () => {
 })
 
 function pct(c) { return Math.round(c.score * 100) }
+function pctBg(idx, score) {
+  const t = Math.max(0.1, Math.min(1, score))
+  const total = Math.max(chunks.value.length - 1, 1)
+  const i = Math.min(idx / total, 1)
+  const baseL = 60 + i * 24
+  const l = Math.min(baseL + (1 - t) * 18, 90)
+  return { background: `hsl(244 72% ${l}%)`, color: l > 75 ? 'hsl(244 72% 35%)' : '#fff' }
+}
 
 async function loadKbs() {
   try { kbs.value = await fetchKbs() } catch {}
@@ -311,7 +319,7 @@ onBeforeUnmount(() => window.removeEventListener('pointerdown', onWindowPointerD
               <div class="source-chip-top" @click="onSourceClick(i)">
                 <span class="source-idx" :style="{ background: sourceAccent(i) }">{{ i + 1 }}</span>
                 <span class="source-name">{{ c.file_name }}</span>
-                <span class="source-pct">{{ pct(c) }}%</span>
+                <span class="source-pct" :style="pctBg(i, c.score)">{{ pct(c) }}%</span>
                 <svg class="source-chevron" :class="{ open: expandedSources[i] }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
               </div>
               <div class="source-text" v-show="expandedSources[i]" @dblclick.stop="onSourceDblClick(c)">{{ c.text }}</div>
@@ -507,7 +515,7 @@ onBeforeUnmount(() => window.removeEventListener('pointerdown', onWindowPointerD
 .source-chip-top { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-size: 12px; cursor: pointer; user-select: none; }
 .source-idx { width: 20px; height: 20px; border-radius: 6px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; }
 .source-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-fg); font-weight: 600; font-size: 11px; }
-.source-pct { font-size: 10px; color: var(--c-accent); font-weight: 700; background: #f6efe2; padding: 2px 7px; border-radius: 999px; flex-shrink: 0; }
+.source-pct { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; flex-shrink: 0; }
 .source-chevron { flex-shrink: 0; color: var(--c-secondary); transition: transform 200ms; }
 .source-chevron.open { transform: rotate(180deg); }
 
