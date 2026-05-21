@@ -221,38 +221,45 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="vectors-filters">
-      <select v-model="selectedKbId">
-        <option value="">全部知识库</option>
-        <option v-for="kb in kbs" :key="kb.id" :value="kb.id">{{ kb.name }}</option>
-      </select>
-      <input
-        v-model="searchText"
-        type="text"
-        placeholder="搜索文件名、分片内容或向量 ID"
-        @keydown.enter="submitFilters"
-      >
-      <label class="toggle-box">
-        <input v-model="onlyUnsynced" type="checkbox">
-        <span>仅看未同步</span>
-      </label>
-      <select v-model="pageSize" @change="onPageSizeChange">
-        <option :value="20">20 / 页</option>
-        <option :value="50">50 / 页</option>
-        <option :value="100">100 / 页</option>
-      </select>
-      <button class="btn primary" :disabled="loading" @click="submitFilters">查询</button>
+    <div class="vectors-card filter-card">
+      <div class="section-head">
+        <div class="section-title">记录筛选</div>
+        <div class="section-subtitle">筛选已经入库的分片记录，不会触发向量召回。</div>
+      </div>
+      <div class="vectors-filters">
+        <select v-model="selectedKbId">
+          <option value="">全部知识库</option>
+          <option v-for="kb in kbs" :key="kb.id" :value="kb.id">{{ kb.name }}</option>
+        </select>
+        <input
+          v-model="searchText"
+          type="text"
+          placeholder="筛选文件名、分片内容或向量 ID"
+          @keydown.enter="submitFilters"
+        >
+        <label class="toggle-box">
+          <input v-model="onlyUnsynced" type="checkbox">
+          <span>仅看异常状态</span>
+        </label>
+        <select v-model="pageSize" @change="onPageSizeChange">
+          <option :value="10">10 / 页</option>
+          <option :value="20">20 / 页</option>
+          <option :value="50">50 / 页</option>
+          <option :value="100">100 / 页</option>
+        </select>
+        <button class="btn primary" :disabled="loading" @click="submitFilters">查询记录</button>
+      </div>
     </div>
 
     <div class="tools-grid">
       <section class="vectors-card tool-card">
-        <div class="tool-title">相似检索测试</div>
-        <div class="tool-subtitle">直接测试当前知识库在向量库中的 topK 命中结果。</div>
+        <div class="tool-title">召回测试</div>
+        <div class="tool-subtitle">输入问题，直接调用当前知识库的向量库做 topK 相似召回。</div>
         <div class="test-controls">
           <input
             v-model="testQuery"
             type="text"
-            placeholder="输入测试 query，比如：什么是 RLHF？"
+            placeholder="输入要测试召回的问题，比如：什么是 RLHF？"
             @keydown.enter="runSearchTest"
           >
           <select v-model="testTopK">
@@ -319,6 +326,17 @@ onMounted(async () => {
             <div>
               <div class="group-title">{{ kb.kb_name }}</div>
               <div class="group-sub">{{ kb.files.length }} 个文件</div>
+            </div>
+            <div class="inline-pager">
+              <div class="pager-summary">
+                {{ pageStart }} - {{ pageEnd }} / {{ total }}
+                <span v-if="onlyUnsynced" class="pager-note">（原始 {{ sourceTotal }}）</span>
+              </div>
+              <div class="pager-actions">
+                <button class="btn" :disabled="page <= 1" @click="changePage(page - 1)">上一页</button>
+                <span class="pager-index">{{ page }} / {{ totalPages }}</span>
+                <button class="btn" :disabled="page >= totalPages" @click="changePage(page + 1)">下一页</button>
+              </div>
             </div>
           </div>
 
@@ -401,18 +419,6 @@ onMounted(async () => {
           </div>
         </section>
       </div>
-
-      <div class="vectors-card pager-card">
-        <div class="pager-summary">
-          显示第 {{ pageStart }} - {{ pageEnd }} 条，共 {{ total }} 条
-          <span v-if="onlyUnsynced" class="pager-note">，原始分片总数 {{ sourceTotal }}</span>
-        </div>
-        <div class="pager-actions">
-          <button class="btn" :disabled="page <= 1" @click="changePage(page - 1)">上一页</button>
-          <span class="pager-index">第 {{ page }} / {{ totalPages }} 页</span>
-          <button class="btn" :disabled="page >= totalPages" @click="changePage(page + 1)">下一页</button>
-        </div>
-      </div>
     </template>
 
     <div v-else class="vectors-card empty-state">
@@ -468,6 +474,27 @@ onMounted(async () => {
   border: 1px solid var(--c-border);
   border-radius: 18px;
   box-shadow: 0 10px 30px rgba(23, 23, 23, 0.04);
+}
+
+.filter-card {
+  padding: 16px 18px 18px;
+}
+
+.section-head {
+  margin-bottom: 12px;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1f1f1f;
+}
+
+.section-subtitle {
+  margin-top: 4px;
+  color: var(--c-secondary);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .vectors-filters {
@@ -624,14 +651,6 @@ onMounted(async () => {
   margin-top: 14px;
 }
 
-.pager-card {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 18px;
-}
-
 .pager-summary {
   color: #333;
   font-size: 13px;
@@ -666,6 +685,13 @@ onMounted(async () => {
   align-items: center;
   padding: 18px 20px;
   border-bottom: 1px solid #f0f0f0;
+}
+
+.inline-pager {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .group-title {
@@ -967,7 +993,7 @@ onMounted(async () => {
 
 @media (max-width: 900px) {
   .vectors-toolbar,
-  .pager-card {
+  .group-head {
     flex-direction: column;
     align-items: stretch;
   }
