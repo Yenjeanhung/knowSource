@@ -49,10 +49,11 @@ app.add_middleware(
 )
 
 # 注册路由
-from routers import kb, files, query
+from routers import kb, files, query, vector_data
 app.include_router(kb.router, prefix="/api")
 app.include_router(files.router, prefix="/api")
 app.include_router(query.router, prefix="/api")
+app.include_router(vector_data.router, prefix="/api")
 
 # 生产环境：托管前端静态文件
 front_dist = Path(__file__).parent.parent / "front" / "dist"

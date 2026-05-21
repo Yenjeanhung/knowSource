@@ -48,6 +48,38 @@ export async function getFileStatus(fileId) {
   return res.json()
 }
 
+export async function fetchVectorRecords({ kbId = '', q = '', unsyncedOnly = false, limit = 100, offset = 0 } = {}) {
+  const params = new URLSearchParams()
+  if (kbId) params.set('kb_id', kbId)
+  if (q) params.set('q', q)
+  if (unsyncedOnly) params.set('unsynced_only', 'true')
+  params.set('limit', String(limit))
+  params.set('offset', String(offset))
+  const res = await fetch(`${API}/api/vector-records?${params.toString()}`)
+  if (!res.ok) throw new Error('Fetch vector records failed')
+  return res.json()
+}
+
+export async function fetchVectorSearchTest({ kbId, query, topK = 8 }) {
+  const params = new URLSearchParams()
+  params.set('kb_id', kbId)
+  params.set('query', query)
+  params.set('top_k', String(topK))
+  const res = await fetch(`${API}/api/vector-search-test?${params.toString()}`)
+  if (!res.ok) throw new Error('Fetch vector search test failed')
+  return res.json()
+}
+
+export async function fetchVectorSummaryExport({ kbId = '', format = 'json' } = {}) {
+  const params = new URLSearchParams()
+  if (kbId) params.set('kb_id', kbId)
+  params.set('format', format)
+  const res = await fetch(`${API}/api/vector-summary-export?${params.toString()}`)
+  if (!res.ok) throw new Error('Fetch vector summary export failed')
+  if (format === 'md') return res.text()
+  return res.json()
+}
+
 /**
  * 流式问答。通过回调逐 token 输出。
  * @param {string} kbId
