@@ -261,7 +261,7 @@ onMounted(() => {
   visibility: hidden;
   pointer-events: none;
   transition: opacity 140ms ease, transform 140ms ease, visibility 140ms ease;
-  z-index: 12;
+  z-index: 9999;
 }
 
 .side-hint::before {
