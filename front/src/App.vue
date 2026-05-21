@@ -122,7 +122,12 @@ onMounted(() => {
     </aside>
 
     <main class="main-area">
-      <router-view />
+      <router-view v-slot="{ Component, route }">
+        <KeepAlive v-if="route.meta.keepAlive">
+          <component :is="Component" />
+        </KeepAlive>
+        <component :is="Component" v-else />
+      </router-view>
     </main>
   </div>
 </template>
@@ -133,6 +138,7 @@ onMounted(() => {
   min-height: 100dvh;
   max-width: 1152px;
   margin: 0;
+  overflow: visible;
 }
 
 .sidebar {
@@ -147,6 +153,8 @@ onMounted(() => {
   border-right: 1px solid var(--c-border);
   background: #fff;
   transition: width 180ms ease, padding 180ms ease;
+  overflow: visible;
+  z-index: 40;
 }
 
 .sidebar-top {
@@ -281,6 +289,8 @@ onMounted(() => {
   flex: 1;
   min-width: 0;
   padding: 28px 32px 48px;
+  position: relative;
+  z-index: 1;
 }
 
 .is-collapsed .sidebar {
