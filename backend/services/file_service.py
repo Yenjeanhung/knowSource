@@ -11,7 +11,7 @@ from models import File, Chunk
 from config import settings
 from database import async_session
 from providers.embedding import create_embeddings
-from providers.vector_store import create_vector_store
+from providers.vector_store import create_vector_store, get_vector_store_provider_name
 from providers.parser import get_parser
 from core.chunker import split_text
 
@@ -44,6 +44,10 @@ class FileService:
             shutil.copyfileobj(chunk_data, f)
 
         received = len(list(CHUNK_DIR.glob(f"{file_id}_*")))
+        logger.info(
+            "Upload chunk received: file_id=%s kb_id=%s chunk_index=%s/%s received=%s file_name=%s",
+            file_id, kb_id, chunk_index + 1, total_chunks, received, file_name,
+        )
 
         # 全部分片到达 → 合并，但不自动处理，等用户确认
         if received == total_chunks:
@@ -58,6 +62,10 @@ class FileService:
         target_path = kb_dir / file.name
 
         chunk_files = sorted(CHUNK_DIR.glob(f"{file_id}_*"))
+        logger.info(
+            "Reassembling upload: file_id=%s kb_id=%s chunks=%s target=%s",
+            file_id, file.kb_id, len(chunk_files), target_path,
+        )
         with open(target_path, "wb") as out:
             for cp in chunk_files:
                 with open(cp, "rb") as cin:
@@ -67,15 +75,21 @@ class FileService:
         file.path = str(target_path)
         file.status = "uploaded"
         await db.commit()
+        logger.info(
+            "Upload reassembled: file_id=%s kb_id=%s path=%s size=%s",
+            file_id, file.kb_id, file.path, file.size,
+        )
 
     @staticmethod
     async def start_processing(file_id: str, db: AsyncSession) -> bool:
         file = await db.get(File, file_id)
         if not file or file.status != "uploaded":
+            logger.warning("Start processing skipped: file_id=%s status=%s", file_id, getattr(file, "status", None))
             return False
         file.status = "processing"
         file.progress = 0
         await db.commit()
+        logger.info("Start processing: file_id=%s kb_id=%s file_name=%s", file.id, file.kb_id, file.name)
         asyncio.create_task(FileService._process_file_bg(file_id))
         return True
 
@@ -92,16 +106,30 @@ class FileService:
             try:
                 file = await db.get(File, file_id)
                 if not file or not file.path:
+                    logger.warning("Background processing aborted: file_id=%s missing file or path", file_id)
                     return
 
                 file_path = Path(file.path)
+                provider_name = get_vector_store_provider_name()
+                logger.info(
+                    "Processing pipeline started: file_id=%s kb_id=%s file_name=%s provider=%s path=%s",
+                    file.id, file.kb_id, file.name, provider_name, file.path,
+                )
 
                 # 1. 解析文档
                 file.progress = 10
                 await db.commit()
 
                 parser = get_parser(file_path)
+                logger.info(
+                    "Parsing file: file_id=%s parser=%s suffix=%s",
+                    file.id, parser.__class__.__name__, file_path.suffix.lower(),
+                )
                 result = parser.parse(file_path)
+                logger.info(
+                    "Parsing completed: file_id=%s content_chars=%s metadata_keys=%s",
+                    file.id, len(result.content or ""), sorted((result.metadata or {}).keys()),
+                )
 
                 # 2. 文本分块
                 file.progress = 25
@@ -116,6 +144,10 @@ class FileService:
                     return
 
                 total = len(text_chunks)
+                logger.info(
+                    "Chunking completed: file_id=%s kb_id=%s chunk_count=%s first_chunk_len=%s",
+                    file.id, file.kb_id, total, len(text_chunks[0]["content"]) if text_chunks else 0,
+                )
 
                 # 3. 构建 LangChain Documents
                 from langchain_core.documents import Document
@@ -134,6 +166,10 @@ class FileService:
                     )
                     for c in text_chunks
                 ]
+                logger.info(
+                    "LangChain documents prepared: file_id=%s doc_count=%s",
+                    file.id, len(docs),
+                )
 
                 # 4. 写入向量库
                 file.progress = 40
@@ -142,8 +178,22 @@ class FileService:
                 embeddings = create_embeddings()
                 vectorstore = create_vector_store(file.kb_id, embeddings)
                 chunk_ids = [f"{file_id}_{i}" for i in range(len(docs))]
+                logger.info(
+                    "Writing vectors: file_id=%s kb_id=%s provider=%s collection=%s ids=%s..%s count=%s",
+                    file.id,
+                    file.kb_id,
+                    provider_name,
+                    file.kb_id,
+                    chunk_ids[0] if chunk_ids else None,
+                    chunk_ids[-1] if chunk_ids else None,
+                    len(chunk_ids),
+                )
                 await asyncio.to_thread(
                     vectorstore.add_documents, docs, ids=chunk_ids
+                )
+                logger.info(
+                    "Vector write completed: file_id=%s kb_id=%s provider=%s count=%s",
+                    file.id, file.kb_id, provider_name, len(chunk_ids),
                 )
 
                 file.progress = 85
@@ -159,13 +209,21 @@ class FileService:
                         embedding_id=chunk_ids[i],
                     )
                     db.add(db_chunk)
+                logger.info(
+                    "Persisting chunk rows: file_id=%s kb_id=%s row_count=%s",
+                    file.id, file.kb_id, len(text_chunks),
+                )
 
                 file.status = "indexed"
                 file.progress = 100
                 await db.commit()
+                logger.info(
+                    "Processing pipeline finished: file_id=%s kb_id=%s status=%s progress=%s",
+                    file.id, file.kb_id, file.status, file.progress,
+                )
 
             except Exception as e:
-                logger.error(f"处理文件失败 {file_id}: {e}")
+                logger.exception("Processing pipeline failed: file_id=%s error=%s", file_id, e)
                 try:
                     file = await db.get(File, file_id)
                     if file:
@@ -190,21 +248,36 @@ class FileService:
     async def delete(db: AsyncSession, file_id: str) -> bool:
         file = await db.get(File, file_id)
         if not file:
+            logger.warning("Delete file skipped: file_id=%s not found", file_id)
             return False
 
         embeddings = create_embeddings()
         chunks = (await db.execute(
             select(Chunk).where(Chunk.file_id == file_id)
         )).scalars().all()
+        provider_name = get_vector_store_provider_name()
+        logger.info(
+            "Deleting file and vectors: file_id=%s kb_id=%s chunk_rows=%s provider=%s",
+            file.id, file.kb_id, len(chunks), provider_name,
+        )
 
         if chunks:
             try:
                 vs = create_vector_store(file.kb_id, embeddings)
+                ids_to_delete = [c.embedding_id for c in chunks if c.embedding_id]
+                logger.info(
+                    "Deleting vectors from store: file_id=%s kb_id=%s provider=%s count=%s",
+                    file.id, file.kb_id, provider_name, len(ids_to_delete),
+                )
                 await asyncio.to_thread(
-                    vs.delete, ids=[c.embedding_id for c in chunks if c.embedding_id]
+                    vs.delete, ids=ids_to_delete
+                )
+                logger.info(
+                    "Vector delete completed: file_id=%s kb_id=%s provider=%s",
+                    file.id, file.kb_id, provider_name,
                 )
             except Exception:
-                pass
+                logger.exception("Vector delete failed: file_id=%s kb_id=%s provider=%s", file.id, file.kb_id, provider_name)
 
         if file.path:
             fp = Path(file.path)
@@ -216,4 +289,5 @@ class FileService:
 
         await db.delete(file)
         await db.commit()
+        logger.info("File delete completed: file_id=%s kb_id=%s", file.id, file.kb_id)
         return True
