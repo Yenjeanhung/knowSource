@@ -28,6 +28,13 @@ const testLoading = ref(false)
 const testResults = ref([])
 const exportLoading = ref(false)
 
+const statusHelpItems = [
+  { key: 'synced', label: '已同步', desc: '业务库有这条分片，向量库里也查到了同一个 embedding_id。' },
+  { key: 'missing_vector', label: '向量缺失', desc: '业务库里有分片和 embedding_id，但去向量库里没查到对应记录。' },
+  { key: 'missing_id', label: '缺少 ID', desc: '业务库里有分片，但没有 embedding_id，暂时无法去向量库校验。' },
+  { key: 'unchecked', label: '未校验', desc: '本次没有完成向量库校验，比如 provider 未实现、collection 读取失败或校验过程异常。' },
+]
+
 const pageOffset = computed(() => (page.value - 1) * pageSize.value)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const pageStart = computed(() => (total.value ? pageOffset.value + 1 : 0))
@@ -115,6 +122,35 @@ function changePage(nextPage) {
 function onPageSizeChange() {
   page.value = 1
   loadRecords()
+}
+
+function getStatusMeta(row) {
+  if (!row.embedding_id) {
+    return {
+      key: 'missing_id',
+      label: '缺少 ID',
+      desc: '业务库里有分片，但没有 embedding_id，暂时无法去向量库校验。',
+    }
+  }
+  if (row.store_found === true) {
+    return {
+      key: 'synced',
+      label: '已同步',
+      desc: '业务库有这条分片，向量库里也查到了同一个 embedding_id。',
+    }
+  }
+  if (row.store_found === false) {
+    return {
+      key: 'missing_vector',
+      label: '向量缺失',
+      desc: '业务库里有分片和 embedding_id，但去向量库里没查到对应记录。',
+    }
+  }
+  return {
+    key: 'unchecked',
+    label: '未校验',
+    desc: '本次没有完成向量库校验，比如 provider 未实现、collection 读取失败或校验过程异常。',
+  }
 }
 
 async function runSearchTest() {
@@ -295,7 +331,16 @@ onMounted(async () => {
             <div class="table-header">
               <div>分片序号</div>
               <div>向量 ID</div>
-              <div>同步状态</div>
+              <div class="status-header">
+                <span>同步状态</span>
+                <span class="help-dot" aria-hidden="true">i</span>
+                <div class="status-tooltip">
+                  <div v-for="item in statusHelpItems" :key="item.key" class="status-tooltip-item">
+                    <strong>{{ item.label }}</strong>
+                    <span>{{ item.desc }}</span>
+                  </div>
+                </div>
+              </div>
               <div>内容预览</div>
               <div>操作</div>
             </div>
@@ -312,9 +357,10 @@ onMounted(async () => {
                 <div class="row-col">
                   <span
                     class="status-chip"
-                    :class="{ ok: row.store_found === true, miss: row.store_found === false }"
+                    :class="getStatusMeta(row).key"
+                    :title="getStatusMeta(row).desc"
                   >
-                    {{ row.store_found === true ? '已同步' : row.store_found === false ? '未命中' : '未校验' }}
+                    {{ getStatusMeta(row).label }}
                   </span>
                 </div>
                 <div class="row-col">
@@ -661,6 +707,78 @@ onMounted(async () => {
   font-weight: 700;
 }
 
+.status-header {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.help-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 999px;
+  border: 1px solid #d8d8d8;
+  background: #fbfbfb;
+  color: #7a7a7a;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  line-height: 1;
+  cursor: help;
+}
+
+.status-tooltip {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 10px);
+  z-index: 20;
+  width: 320px;
+  padding: 12px;
+  border: 1px solid #ececec;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(23, 23, 23, 0.12);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+}
+
+.status-header:hover .status-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.status-tooltip-item + .status-tooltip-item {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #f3f3f3;
+}
+
+.status-tooltip-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.5;
+}
+
+.status-tooltip-item strong {
+  color: #222;
+  font-size: 12px;
+}
+
+.status-tooltip-item span {
+  color: #666;
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .vector-row + .vector-row {
   border-top: 1px solid #f8f8f8;
 }
@@ -709,6 +827,26 @@ onMounted(async () => {
 .status-chip.miss {
   background: #fef2f2;
   color: #b91c1c;
+}
+
+.status-chip.synced {
+  background: #ecfdf3;
+  color: #15803d;
+}
+
+.status-chip.missing_vector {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.status-chip.missing_id {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.status-chip.unchecked {
+  background: #f5f5f5;
+  color: #666;
 }
 
 .preview-text {
