@@ -5,6 +5,8 @@ import { useRouter } from 'vue-router'
 const router = useRouter()
 const isSidebarCollapsed = ref(false)
 const SIDEBAR_STORAGE_KEY = 'knowsource.sidebar.collapsed'
+const THEME_STORAGE_KEY = 'knowsource.theme'
+const theme = ref('light')
 
 const menuItems = computed(() => [
   { to: '/', label: '知识库', exact: true, hint: '知识库' },
@@ -17,6 +19,16 @@ function toggleSidebar() {
   localStorage.setItem(SIDEBAR_STORAGE_KEY, String(isSidebarCollapsed.value))
 }
 
+function applyTheme(nextTheme) {
+  theme.value = nextTheme
+  document.documentElement.dataset.theme = nextTheme
+  localStorage.setItem(THEME_STORAGE_KEY, nextTheme)
+}
+
+function toggleTheme() {
+  applyTheme(theme.value === 'dark' ? 'light' : 'dark')
+}
+
 function isExact(item) {
   return item.exact ? 'is-active' : undefined
 }
@@ -26,6 +38,15 @@ onMounted(() => {
   if (saved !== null) {
     isSidebarCollapsed.value = saved === 'true'
   }
+
+  const savedTheme = localStorage.getItem(THEME_STORAGE_KEY)
+  if (savedTheme === 'light' || savedTheme === 'dark') {
+    applyTheme(savedTheme)
+    return
+  }
+
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+  applyTheme(prefersDark ? 'dark' : 'light')
 })
 </script>
 
@@ -42,6 +63,51 @@ onMounted(() => {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3.75" y="5" width="16.5" height="14" rx="3" />
             <path d="M9 5v14" />
+          </svg>
+        </button>
+        <button
+          v-if="!isSidebarCollapsed"
+          class="sidebar-toggle theme-toggle"
+          type="button"
+          :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
+          :title="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
+          @click="toggleTheme"
+        >
+          <svg
+            v-if="theme === 'dark'"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.85"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="4.25" />
+            <path d="M12 2.75v2.1" />
+            <path d="M12 19.15v2.1" />
+            <path d="m4.93 4.93 1.49 1.49" />
+            <path d="m17.58 17.58 1.49 1.49" />
+            <path d="M2.75 12h2.1" />
+            <path d="M19.15 12h2.1" />
+            <path d="m4.93 19.07 1.49-1.49" />
+            <path d="m17.58 6.42 1.49-1.49" />
+          </svg>
+          <svg
+            v-else
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.85"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M20.25 14.2A8.25 8.25 0 1 1 9.8 3.75a6.6 6.6 0 0 0 10.45 10.45Z" />
           </svg>
         </button>
       </div>
@@ -151,7 +217,7 @@ onMounted(() => {
   top: 0;
   height: 100dvh;
   border-right: 1px solid var(--c-border);
-  background: #fff;
+  background: var(--c-panel);
   transition: width 180ms ease, padding 180ms ease;
   overflow: visible;
   z-index: 40;
@@ -159,6 +225,8 @@ onMounted(() => {
 
 .sidebar-top {
   display: flex;
+  align-items: center;
+  gap: 8px;
   justify-content: flex-start;
   padding-bottom: 10px;
 }
@@ -180,6 +248,10 @@ onMounted(() => {
 .sidebar-toggle:hover {
   background: var(--c-muted);
   color: var(--c-fg);
+}
+
+.theme-toggle {
+  color: var(--c-accent);
 }
 
 .side-nav {
@@ -257,10 +329,10 @@ onMounted(() => {
   top: 50%;
   transform: translateY(-50%) translateX(-4px);
   padding: 7px 10px;
-  border: 1px solid #ece7df;
+  border: 1px solid var(--c-border);
   border-radius: 12px;
-  background: rgba(255, 252, 247, 0.98);
-  color: #5f5548;
+  background: var(--c-panel-elevated);
+  color: var(--c-fg);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
@@ -279,9 +351,9 @@ onMounted(() => {
   top: 50%;
   width: 10px;
   height: 10px;
-  border-left: 1px solid #ece7df;
-  border-bottom: 1px solid #ece7df;
-  background: rgba(255, 252, 247, 0.98);
+  border-left: 1px solid var(--c-border);
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-panel-elevated);
   transform: translateY(-50%) rotate(45deg);
 }
 
