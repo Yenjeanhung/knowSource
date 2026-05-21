@@ -15,9 +15,10 @@ const records = ref([])
 const provider = ref('')
 const total = ref(0)
 const sourceTotal = ref(0)
-const loading = ref(false)
+const recordsLoading = ref(false)
 const error = ref('')
 const expandedRows = ref({})
+const pageInput = ref('1')
 
 const page = ref(1)
 const pageSize = ref(20)
@@ -78,9 +79,8 @@ async function loadKbs() {
 }
 
 async function loadRecords() {
-  loading.value = true
+  recordsLoading.value = true
   error.value = ''
-  expandedRows.value = {}
   try {
     const data = await fetchVectorRecords({
       kbId: selectedKbId.value,
@@ -97,10 +97,12 @@ async function loadRecords() {
     if (page.value > maxPage) {
       page.value = maxPage
     }
+    pageInput.value = String(page.value)
+    expandedRows.value = {}
   } catch (err) {
     error.value = err.message || '加载向量数据失败'
   } finally {
-    loading.value = false
+    recordsLoading.value = false
   }
 }
 
@@ -116,12 +118,25 @@ function submitFilters() {
 function changePage(nextPage) {
   if (nextPage < 1 || nextPage > totalPages.value || nextPage === page.value) return
   page.value = nextPage
+  pageInput.value = String(nextPage)
   loadRecords()
 }
 
 function onPageSizeChange() {
   page.value = 1
+  pageInput.value = '1'
   loadRecords()
+}
+
+function submitPageInput() {
+  const raw = Number.parseInt(String(pageInput.value).trim(), 10)
+  if (Number.isNaN(raw)) {
+    pageInput.value = String(page.value)
+    return
+  }
+  const nextPage = Math.min(Math.max(raw, 1), totalPages.value)
+  pageInput.value = String(nextPage)
+  changePage(nextPage)
 }
 
 function getStatusMeta(row) {
@@ -203,6 +218,7 @@ async function exportSummary(format) {
 
 onMounted(async () => {
   await loadKbs()
+  pageInput.value = String(page.value)
   await loadRecords()
 })
 </script>
@@ -247,7 +263,7 @@ onMounted(async () => {
           <option :value="50">50 / 页</option>
           <option :value="100">100 / 页</option>
         </select>
-        <button class="btn primary" :disabled="loading" @click="submitFilters">查询记录</button>
+        <button class="btn primary" :disabled="recordsLoading" @click="submitFilters">查询记录</button>
       </div>
     </div>
 
@@ -312,7 +328,7 @@ onMounted(async () => {
       <div class="error-text">{{ error }}</div>
     </div>
 
-    <div v-else-if="loading" class="vectors-card">
+    <div v-else-if="recordsLoading && !records.length" class="vectors-card">
       <div class="loading-row">
         <span class="spinner"></span>
         加载向量记录中...
@@ -333,14 +349,31 @@ onMounted(async () => {
                 <span v-if="onlyUnsynced" class="pager-note">（原始 {{ sourceTotal }}）</span>
               </div>
               <div class="pager-actions">
-                <button class="btn" :disabled="page <= 1" @click="changePage(page - 1)">上一页</button>
-                <span class="pager-index">{{ page }} / {{ totalPages }}</span>
-                <button class="btn" :disabled="page >= totalPages" @click="changePage(page + 1)">下一页</button>
+                <button class="btn pager-btn" :disabled="recordsLoading || page <= 1" @click="changePage(page - 1)">上一页</button>
+                <div class="pager-jump">
+                  <input
+                    v-model="pageInput"
+                    class="pager-input"
+                    type="text"
+                    inputmode="numeric"
+                    :disabled="recordsLoading"
+                    @keydown.enter="submitPageInput"
+                    @blur="submitPageInput"
+                  >
+                  <span class="pager-total">/ {{ totalPages }}</span>
+                </div>
+                <button class="btn pager-btn" :disabled="recordsLoading || page >= totalPages" @click="changePage(page + 1)">下一页</button>
               </div>
             </div>
           </div>
 
-          <div v-for="file in kb.files" :key="file.file_id" class="file-group">
+          <div class="group-body" :class="{ 'is-loading': recordsLoading }">
+            <div class="group-loading" v-if="recordsLoading">
+              <span class="spinner"></span>
+              正在刷新当前页...
+            </div>
+
+            <div v-for="file in kb.files" :key="file.file_id" class="file-group">
             <div class="file-head">
               <div class="file-title">{{ file.file_name }}</div>
               <div class="file-sub">{{ file.rows.length }} 个分片</div>
@@ -415,6 +448,7 @@ onMounted(async () => {
                   </div>
                 </div>
               </div>
+            </div>
             </div>
           </div>
         </section>
@@ -666,11 +700,35 @@ onMounted(async () => {
   gap: 10px;
 }
 
-.pager-index {
-  min-width: 88px;
+.pager-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  height: 42px;
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.pager-input {
+  width: 42px;
+  border: 0;
+  outline: none;
   text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #222;
+  background: transparent;
+}
+
+.pager-total {
   color: var(--c-secondary);
   font-size: 13px;
+}
+
+.pager-btn {
+  min-width: 74px;
 }
 
 .vectors-groups {
@@ -692,6 +750,40 @@ onMounted(async () => {
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
+}
+
+.group-body {
+  position: relative;
+}
+
+.group-body.is-loading {
+  pointer-events: none;
+}
+
+.group-loading {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #ece7df;
+  border-radius: 12px;
+  background: rgba(255, 252, 247, 0.95);
+  color: #6b5f51;
+  font-size: 12px;
+  box-shadow: 0 12px 30px rgba(92, 78, 58, 0.08);
+}
+
+.group-body.is-loading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(1px);
+  z-index: 2;
 }
 
 .group-title {
@@ -1001,6 +1093,11 @@ onMounted(async () => {
   .vectors-filters,
   .test-controls {
     grid-template-columns: 1fr;
+  }
+
+  .pager-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .table-header {
