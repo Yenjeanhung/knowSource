@@ -156,10 +156,81 @@ textarea {
 
 :root[data-theme='dark'] .sources-hint,
 :root[data-theme='dark'] .table-header,
-:root[data-theme='dark'] .expanded-label {
+:root[data-theme='dark'] .expanded-label,
+:root[data-theme='dark'] .test-item,
+:root[data-theme='dark'] .expanded-meta,
+:root[data-theme='dark'] .expanded-block {
   background: #1b2025 !important;
   border-color: var(--c-border) !important;
   color: var(--c-secondary) !important;
+}
+
+:root[data-theme='dark'] .test-snippet,
+:root[data-theme='dark'] .preview-text,
+:root[data-theme='dark'] .expanded-pre {
+  color: var(--c-fg) !important;
+}
+
+:root[data-theme='dark'] .group-loading {
+  background: rgba(30, 36, 42, 0.95) !important;
+  border-color: var(--c-border) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme='dark'] .group-body.is-loading::after {
+  background: rgba(20, 24, 28, 0.58) !important;
+}
+
+:root[data-theme='dark'] .status-chip {
+  background: #252a30 !important;
+}
+
+:root[data-theme='dark'] .status-chip.ok,
+:root[data-theme='dark'] .status-chip.synced {
+  background: rgba(21, 128, 61, 0.15) !important;
+  color: #4ade80 !important;
+}
+
+:root[data-theme='dark'] .status-chip.miss,
+:root[data-theme='dark'] .status-chip.missing_vector {
+  background: rgba(185, 28, 28, 0.15) !important;
+  color: #f87171 !important;
+}
+
+:root[data-theme='dark'] .status-chip.missing_id {
+  background: rgba(194, 65, 12, 0.15) !important;
+  color: #fb923c !important;
+}
+
+:root[data-theme='dark'] .help-dot {
+  background: #252a30 !important;
+  border-color: var(--c-border) !important;
+}
+
+:root[data-theme='dark'] .vectors-filters select,
+:root[data-theme='dark'] .vectors-filters input,
+:root[data-theme='dark'] .test-controls select,
+:root[data-theme='dark'] .test-controls input {
+  background: var(--c-panel) !important;
+  color: var(--c-fg) !important;
+}
+
+:root[data-theme='dark'] .btn {
+  background: var(--c-panel) !important;
+  color: var(--c-fg) !important;
+  border-color: var(--c-border) !important;
+}
+
+:root[data-theme='dark'] .btn.primary {
+  background: #e8e2d8 !important;
+  color: #171717 !important;
+  border-color: #e8e2d8 !important;
+}
+
+:root[data-theme='dark'] .vector-row + .vector-row,
+:root[data-theme='dark'] .file-group + .file-group,
+:root[data-theme='dark'] .status-tooltip-item + .status-tooltip-item {
+  border-color: var(--c-border) !important;
 }
 
 :root[data-theme='dark'] .file-card:hover,

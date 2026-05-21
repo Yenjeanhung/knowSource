@@ -521,7 +521,7 @@ onMounted(async () => {
 .section-title {
   font-size: 15px;
   font-weight: 700;
-  color: #1f1f1f;
+  color: var(--c-fg);
 }
 
 .section-subtitle {
@@ -573,7 +573,7 @@ onMounted(async () => {
   border: 1px solid var(--c-border);
   border-radius: 12px;
   background: #fff;
-  color: #222;
+  color: var(--c-fg);
   font-weight: 600;
   cursor: pointer;
 }
@@ -670,7 +670,7 @@ onMounted(async () => {
 }
 
 .test-snippet {
-  color: #444;
+  color: var(--c-fg);
   font-size: 13px;
   line-height: 1.6;
   display: -webkit-box;
@@ -686,7 +686,7 @@ onMounted(async () => {
 }
 
 .pager-summary {
-  color: #333;
+  color: var(--c-fg);
   font-size: 13px;
 }
 
@@ -718,7 +718,7 @@ onMounted(async () => {
   text-align: center;
   font-size: 13px;
   font-weight: 600;
-  color: #222;
+  color: var(--c-fg);
   background: transparent;
 }
 
@@ -772,7 +772,7 @@ onMounted(async () => {
   border: 1px solid #ece7df;
   border-radius: 12px;
   background: rgba(255, 252, 247, 0.95);
-  color: #6b5f51;
+  color: var(--c-secondary);
   font-size: 12px;
   box-shadow: 0 12px 30px rgba(92, 78, 58, 0.08);
 }
@@ -841,7 +841,7 @@ onMounted(async () => {
   border-radius: 999px;
   border: 1px solid #d8d8d8;
   background: #fbfbfb;
-  color: #7a7a7a;
+  color: var(--c-secondary);
   font-size: 10px;
   font-weight: 700;
   font-family: Georgia, "Times New Roman", serif;
@@ -887,12 +887,12 @@ onMounted(async () => {
 }
 
 .status-tooltip-item strong {
-  color: #222;
+  color: var(--c-fg);
   font-size: 12px;
 }
 
 .status-tooltip-item span {
-  color: #666;
+  color: var(--c-secondary);
   font-size: 12px;
   font-weight: 400;
 }
@@ -922,7 +922,7 @@ onMounted(async () => {
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
-  color: #444;
+  color: var(--c-fg);
   word-break: break-all;
 }
 
@@ -932,7 +932,7 @@ onMounted(async () => {
   padding: 4px 10px;
   border-radius: 999px;
   background: #f5f5f5;
-  color: #666;
+  color: var(--c-secondary);
   font-size: 12px;
   font-weight: 600;
 }
@@ -964,11 +964,11 @@ onMounted(async () => {
 
 .status-chip.unchecked {
   background: #f5f5f5;
-  color: #666;
+  color: var(--c-secondary);
 }
 
 .preview-text {
-  color: #444;
+  color: var(--c-fg);
   font-size: 13px;
   line-height: 1.6;
   display: -webkit-box;
@@ -1036,7 +1036,7 @@ onMounted(async () => {
 .expanded-pre {
   margin: 0;
   padding: 12px;
-  color: #333;
+  color: var(--c-fg);
   font-size: 12px;
   line-height: 1.65;
   white-space: pre-wrap;
