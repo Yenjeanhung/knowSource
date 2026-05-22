@@ -36,8 +36,8 @@ export async function deleteFile(fileId) {
   await fetch(`${API}/api/files/${fileId}`, { method: 'DELETE' })
 }
 
-export async function processFile(fileId) {
-  const res = await fetch(`${API}/api/files/${fileId}/process`, { method: 'POST' })
+export async function processFile(fileId, { extractGraph = true } = {}) {
+  const res = await fetch(`${API}/api/files/${fileId}/process?extract_graph=${extractGraph}`, { method: 'POST' })
   if (!res.ok) throw new Error('Process failed')
   return res.json()
 }
@@ -77,6 +77,26 @@ export async function fetchVectorSummaryExport({ kbId = '', format = 'json' } = 
   const res = await fetch(`${API}/api/vector-summary-export?${params.toString()}`)
   if (!res.ok) throw new Error('Fetch vector summary export failed')
   if (format === 'md') return res.text()
+  return res.json()
+}
+
+export async function fetchGraphRelationTypes({ kbId, fileId = '' }) {
+  const params = new URLSearchParams()
+  params.set('kb_id', kbId)
+  if (fileId) params.set('file_id', fileId)
+  const res = await fetch(`${API}/api/graph/relation-types?${params.toString()}`)
+  if (!res.ok) throw new Error('Fetch graph relation types failed')
+  return res.json()
+}
+
+export async function fetchGraphView({ kbId, fileId = '', entityQuery = '', relationType = '' }) {
+  const params = new URLSearchParams()
+  params.set('kb_id', kbId)
+  if (fileId) params.set('file_id', fileId)
+  if (entityQuery) params.set('entity_query', entityQuery)
+  if (relationType) params.set('relation_type', relationType)
+  const res = await fetch(`${API}/api/graph/view?${params.toString()}`)
+  if (!res.ok) throw new Error('Fetch graph view failed')
   return res.json()
 }
 

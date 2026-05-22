@@ -12,6 +12,7 @@ const menuItems = computed(() => [
   { to: '/', label: '知识库', exact: true, hint: '知识库' },
   { to: '/query', label: '问答', exact: false, hint: '问答' },
   { to: '/vectors', label: '向量', exact: false, hint: '向量' },
+  { to: '/graph', label: '图谱', exact: false, hint: '图谱' },
 ])
 
 function toggleSidebar() {
@@ -69,8 +70,8 @@ onMounted(() => {
           v-if="!isSidebarCollapsed"
           class="sidebar-toggle theme-toggle"
           type="button"
-          :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
-          :title="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
+          :aria-label="theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'"
+          :title="theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'"
           @click="toggleTheme"
         >
           <svg
@@ -150,6 +151,24 @@ onMounted(() => {
               <path d="M12 3.25 18.75 7v7.75L12 18.5l-6.75-3.75V7L12 3.25Z" />
               <path d="M9 9.25h6" />
               <path d="M9 12.75h3.5" />
+            </svg>
+            <svg
+              v-else-if="item.to === '/graph'"
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="6.5" cy="6.5" r="2.25" />
+              <circle cx="17.5" cy="6.5" r="2.25" />
+              <circle cx="12" cy="17.5" r="2.25" />
+              <path d="M8.75 6.5h6.5" />
+              <path d="M8.2 8.1 10.3 15.2" />
+              <path d="m15.8 8.1-2.1 7.1" />
             </svg>
             <svg
               v-else

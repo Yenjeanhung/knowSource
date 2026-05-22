@@ -563,3 +563,6 @@ pydantic-settings>=2.0.0
 - [ ] 实现 llm_service.py（OpenAI 兼容接口调用）
 - [ ] 升级 /api/query 接口为完整的 RAG 流程
 - [ ] 验证：端到端问答正常工作
+
+# graph
+Document -> Chunk -> Entity / Relation

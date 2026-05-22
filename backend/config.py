@@ -25,6 +25,20 @@ class Settings(BaseSettings):
     MILVUS_HOST: str
     MILVUS_PORT: int
 
+    # 图存储
+    GRAPH_STORE_PROVIDER: Literal["kuzu", "neo4j"] = "kuzu"
+    KUZU_DB_PATH: str = "./data/graph/graph.kuzu"
+    NEO4J_URI: str = "bolt://localhost:7687"
+    NEO4J_USER: str = "neo4j"
+    NEO4J_PASSWORD: str = "neo4j"
+    NEO4J_DATABASE: str = "neo4j"
+    GRAPH_ENTITY_EXTRACTION_ENABLED: bool = True
+    GRAPH_EXTRACTION_BATCH_SIZE: int = 6
+    GRAPH_EXTRACTION_CONCURRENCY: int = 3
+    GRAPH_MIN_CHARS_FOR_EXTRACTION: int = 80
+    GRAPH_MAX_ENTITIES_PER_CHUNK: int = 12
+    GRAPH_MAX_RELATIONS_PER_CHUNK: int = 12
+
     # LLM
     LLM_PROVIDER: Literal["openai"]
     OPENAI_API_KEY: str

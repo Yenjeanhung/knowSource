@@ -1,9 +1,9 @@
+from __future__ import annotations
+
 from datetime import datetime
-from pathlib import Path
-from typing import Optional
 import uuid
 
-from sqlalchemy import Column, String, Integer, Text, ForeignKey
+from sqlalchemy import Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -30,9 +30,11 @@ class File(Base):
     name = Column(String, nullable=False)
     size = Column(Integer, nullable=False)
     total_chunks = Column(Integer, nullable=False, default=0)
-    status = Column(String, default="uploading")  # uploading / uploaded / processing / indexed / failed
-    progress = Column(Integer, default=0)  # 0-100
-    message = Column(String, nullable=True)  # 失败原因等提示信息
+    status = Column(String, default="uploading")
+    progress = Column(Integer, default=0)
+    message = Column(String, nullable=True)
+    detail = Column(Text, nullable=True)
+    logs = Column(Text, nullable=True)
     path = Column(String, nullable=True)
     created_at = Column(String, default=lambda: datetime.now().isoformat())
 
@@ -47,7 +49,7 @@ class Chunk(Base):
     file_id = Column(String, ForeignKey("files.id", ondelete="CASCADE"), nullable=False)
     content = Column(Text, nullable=False)
     chunk_index = Column(Integer, nullable=False)
-    embedding_id = Column(String, nullable=True)  # 向量存储中的 ID
+    embedding_id = Column(String, nullable=True)
     created_at = Column(String, default=lambda: datetime.now().isoformat())
 
     file = relationship("File", back_populates="chunks")

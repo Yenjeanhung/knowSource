@@ -1,7 +1,5 @@
 """
-KnowSource Backend — 基于知识库的 RAG 问答服务。
-
-启动: pip install -r requirements.txt && python server.py
+KnowSource backend entrypoint.
 """
 
 import logging
@@ -22,21 +20,28 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """启动时初始化数据库和 Provider 单例。"""
-    logger.info("正在初始化数据库...")
+    """Initialize storage and provider singletons at startup."""
+    logger.info("Initializing database...")
     await init_db()
 
-    logger.info("正在加载嵌入模型...")
+    logger.info("Loading embedding provider...")
     from providers.embedding import create_embeddings
-    create_embeddings()  # 预加载，后续直接用缓存
 
-    logger.info("正在加载 LLM...")
+    create_embeddings()
+
+    logger.info("Loading LLM provider...")
     from providers.llm import create_llm
-    create_llm()  # 预加载
 
-    logger.info("KnowSource 服务已启动")
+    create_llm()
+
+    logger.info("Ensuring graph store schema...")
+    from providers.graph_store import ensure_graph_schema
+
+    ensure_graph_schema()
+
+    logger.info("KnowSource started.")
     yield
-    logger.info("KnowSource 服务已关闭")
+    logger.info("KnowSource stopped.")
 
 
 app = FastAPI(title="KnowSource", lifespan=lifespan)
@@ -48,14 +53,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 注册路由
-from routers import kb, files, query, vector_data
+from routers import files, graph, kb, query, vector_data
+
 app.include_router(kb.router, prefix="/api")
 app.include_router(files.router, prefix="/api")
+app.include_router(graph.router, prefix="/api")
 app.include_router(query.router, prefix="/api")
 app.include_router(vector_data.router, prefix="/api")
 
-# 生产环境：托管前端静态文件
 front_dist = Path(__file__).parent.parent / "front" / "dist"
 if front_dist.exists():
     app.mount("/", StaticFiles(directory=str(front_dist), html=True), name="frontend")

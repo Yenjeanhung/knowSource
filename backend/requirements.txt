@@ -29,5 +29,9 @@ langchain-chroma>=0.1.0         # VECTOR_STORE_PROVIDER=chroma
 # LangChain LLM
 langchain-openai>=0.2.0         # LLM_PROVIDER=openai
 
+# 图数据库
+kuzu>=0.8.0                     # GRAPH_STORE_PROVIDER=kuzu
+neo4j>=5.0.0                    # GRAPH_STORE_PROVIDER=neo4j
+
 # 本地嵌入模型依赖（EMBEDDING_PROVIDER=local 时需要）
 sentence-transformers>=2.2.0
