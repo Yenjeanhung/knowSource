@@ -378,16 +378,14 @@ function getExtractionStats(file) {
         <div class="process-panel" v-if="file.status === 'processing' || file.status === 'indexed'">
           <div class="terminal">
             <div class="terminal-bar">
-              <span class="terminal-dot dot-red"></span>
-              <span class="terminal-dot dot-yellow"></span>
-              <span class="terminal-dot dot-green"></span>
               <span class="terminal-title">
                 {{ file.status === 'indexed' ? '处理完成' : '处理中...' }}
                 &mdash; {{ file.name }}
               </span>
               <span class="terminal-meta">
                 <span class="terminal-pill">{{ file.progress || 0 }}%</span>
-                <span class="terminal-pill">{{ getElapsedLabel(file) }}</span>
+                <span class="terminal-time-display" v-if="file.status === 'processing'">处理时间 {{ getElapsedLabel(file) }}</span>
+                <span class="terminal-time-display done" v-else-if="file.status === 'indexed'">总耗时 {{ getElapsedLabel(file) }}</span>
                 <span v-if="file.detail?.summary" class="terminal-pill">
                   分片 {{ file.detail.summary.chunk_count || 0 }}
                 </span>
@@ -569,16 +567,20 @@ h1 { font-size: 18px; font-weight: 700; }
   border-bottom: 1px solid #21262d;
 }
 
-.terminal-dot {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
+.terminal-time-display {
+  padding: 2px 8px;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #58a6ff;
+  background: rgba(88,166,255,0.1);
+  border-radius: 4px;
   flex-shrink: 0;
 }
 
-.dot-red { background: #f85149; }
-.dot-yellow { background: #d29922; }
-.dot-green { background: #3fb950; }
+.terminal-time-display.done {
+  color: #3fb950;
+  background: rgba(63,185,80,0.1);
+}
 
 .terminal-title {
   flex: 1;

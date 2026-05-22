@@ -8,6 +8,19 @@ const ENTITY_COLORS = [
   '#ab8d5c', '#b8887a', '#728da8', '#87a387', '#a88a5e',
 ]
 
+const ENTITY_TYPE_CN = {
+  person: '人物', org: '组织', organization: '组织', product: '产品',
+  project: '项目', technology: '技术', location: '地点', date: '日期',
+  event: '事件', concept: '概念', file: '文件', regulation: '法规',
+  indicator: '指标', method: '方法', algorithm: '算法', model: '模型',
+  dataset: '数据集', unknown: '未知',
+}
+
+function entityTypeLabel(etype) {
+  if (!etype) return '未知'
+  return ENTITY_TYPE_CN[etype.toLowerCase()] || etype
+}
+
 const kbs = ref([])
 const kbFiles = ref([])
 const relationTypes = ref([])
@@ -540,7 +553,7 @@ onUnmounted(() => stopSimulation())
         <div class="graph-canvas-wrap">
           <div class="graph-legend">
             <span v-for="(color, etype) in colorMap" :key="etype" class="legend-chip">
-              <span class="legend-dot" :style="{ background: color }"></span>{{ etype }}
+              <span class="legend-dot" :style="{ background: color }"></span>{{ entityTypeLabel(etype) }}
             </span>
           </div>
           <div class="graph-canvas" :class="{ panning: isPanning }">
@@ -656,7 +669,7 @@ onUnmounted(() => stopSimulation())
                 <span class="entity-dot" :style="{ background: getNodeColor(selectedNode) }"></span>
                 {{ selectedNode.name }}
               </div>
-              <div class="inspector-sub">{{ selectedNode.entityType }}</div>
+              <div class="inspector-sub">{{ entityTypeLabel(selectedNode.entityType) }}</div>
               <div v-if="selectedNode.description" class="inspector-desc">{{ selectedNode.description }}</div>
               <div class="detail-section">
                 <div class="detail-label">关联关系 ({{ selectedNodeEdges.length }})</div>
@@ -704,7 +717,7 @@ onUnmounted(() => stopSimulation())
               <div class="chip-list" v-if="record.entities?.length">
                 <span v-for="entity in record.entities.slice(0, 5)" :key="entity.entity_id" class="entity-chip">
                   {{ entity.name }}
-                  <small>{{ entity.entity_type }}</small>
+                  <small>{{ entityTypeLabel(entity.entity_type) }}</small>
                 </span>
               </div>
             </article>

@@ -21,8 +21,8 @@ GRAPH_EXTRACTION_SYSTEM_PROMPT = """你是知识图谱抽取助手。
 
 要求：
 1. 仅基于提供文本抽取，不要编造。
-2. 实体类型尽量简洁，如 PERSON、ORG、PRODUCT、PROJECT、TECHNOLOGY、LOCATION、DATE、EVENT、CONCEPT。
-3. 关系类型用大写下划线风格，如 WORKS_FOR、PART_OF、USES、LOCATED_IN、DEPENDS_ON、BELONGS_TO、MENTIONS。
+2. 实体类型用中文，如 人物、组织、产品、项目、技术、地点、日期、事件、概念、文件、法规、指标、方法、算法、模型、数据集。
+3. 关系类型用中文，如 任职于、属于、使用、位于、依赖、包含、提到、开发、合作、发布、属于组织、担任、涉及、基于、参考、定义。
 4. 每个 chunk 单独输出 entities 和 relations。
 5. relation 的 source_name 和 target_name 必须引用同一 chunk 内出现的实体名。
 6. 如果某个 chunk 没有合适结果，返回空数组。
