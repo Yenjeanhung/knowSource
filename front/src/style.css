@@ -89,6 +89,11 @@ textarea {
   border-color: var(--c-border);
 }
 
+select option {
+  background: var(--c-panel);
+  color: var(--c-fg);
+}
+
 .spinner {
   display: inline-block; width: 16px; height: 16px;
   border: 2px solid var(--c-border); border-top-color: var(--c-fg);
@@ -137,6 +142,8 @@ textarea {
 :root[data-theme='dark'] .expanded-meta,
 :root[data-theme='dark'] .expanded-block,
 :root[data-theme='dark'] .status-tooltip,
+:root[data-theme='dark'] select,
+:root[data-theme='dark'] select option,
 :root[data-theme='dark'] .dropzone,
 :root[data-theme='dark'] .modal,
 :root[data-theme='dark'] .meta-chip {
@@ -236,11 +243,24 @@ textarea {
 :root[data-theme='dark'] .file-card:hover,
 :root[data-theme='dark'] .kb-row:hover,
 :root[data-theme='dark'] .row-main:hover,
+:root[data-theme='dark'] .kb-option:hover,
 :root[data-theme='dark'] .side-item.is-active,
 :root[data-theme='dark'] .side-item:hover,
 :root[data-theme='dark'] .side-brand:hover,
 :root[data-theme='dark'] .view-toggle button:hover:not(.on) {
   background: var(--c-muted) !important;
+}
+
+:root[data-theme='dark'] .kb-option.active {
+  background: var(--c-muted-hover) !important;
+  color: var(--c-fg) !important;
+}
+
+:root[data-theme='dark'] .kb-option-meta,
+:root[data-theme='dark'] .kb-option-placeholder,
+:root[data-theme='dark'] .select-value.placeholder,
+:root[data-theme='dark'] .field-caret {
+  color: var(--c-secondary) !important;
 }
 
 :root[data-theme='dark'] .view-toggle button.on {
