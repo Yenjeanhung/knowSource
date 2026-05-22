@@ -435,9 +435,48 @@ class FileService:
                 relation_count = 0
 
                 if extract_graph:
+                    # Set up KB + Document metadata and clear old graph data first
+                    await asyncio.to_thread(
+                        upsert_document_graph,
+                        file.kb_id,
+                        kb.name,
+                        file.id,
+                        file.name,
+                        file.path or "",
+                        [],
+                        True,  # clear_existing
+                    )
                     extraction_started = perf_counter()
                     last_ui_update = {"batch": 0, "ts": perf_counter()}
                     last_log_flush = {"ts": 0.0}
+                    accumulated_entity_count = {"value": 0}
+                    accumulated_relation_count = {"value": 0}
+
+                    async def batch_result_callback(batch_chunks: list):
+                        await asyncio.to_thread(
+                            upsert_document_graph,
+                            file.kb_id,
+                            kb.name,
+                            file.id,
+                            file.name,
+                            file.path or "",
+                            batch_chunks,
+                            False,  # clear_existing=False, incremental write
+                        )
+                        accumulated_entity_count["value"] += sum(
+                            len(chunk.entities) for chunk in batch_chunks
+                        )
+                        accumulated_relation_count["value"] += sum(
+                            len(chunk.relations) for chunk in batch_chunks
+                        )
+                        await FileService._commit_runtime_state(
+                            db,
+                            file,
+                            extraction_progress={
+                                "entity_count": accumulated_entity_count["value"],
+                                "relation_count": accumulated_relation_count["value"],
+                            },
+                        )
 
                     async def extraction_progress_callback(
                         processed_batches: int,
@@ -468,6 +507,8 @@ class FileService:
                                 "total_batches": total_batches,
                                 "processed_chunks": processed_chunks,
                                 "total_candidate_chunks": total_candidate_chunks,
+                                "entity_count": accumulated_entity_count["value"],
+                                "relation_count": accumulated_relation_count["value"],
                                 "label": f"已完成批次 {processed_batches}/{total_batches}",
                             },
                         )
@@ -496,6 +537,7 @@ class FileService:
                         graph_chunks,
                         progress_callback=extraction_progress_callback,
                         log_callback=extraction_log_callback,
+                        batch_result_callback=batch_result_callback,
                     )
                     entity_count = sum(len(chunk.entities) for chunk in graph_chunks)
                     relation_count = sum(len(chunk.relations) for chunk in graph_chunks)
@@ -544,6 +586,7 @@ class FileService:
                         file.name,
                         file.path or "",
                         graph_chunks,
+                        False,  # clear_existing=False, incremental data already written
                     )
                     graph_ms = (perf_counter() - graph_write_started) * 1000
                     logger.info(

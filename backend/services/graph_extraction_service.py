@@ -65,6 +65,7 @@ Chunks:
 
 ProgressCallback = Callable[[int, int, int, int], Awaitable[None]]
 LogCallback = Callable[[str], Awaitable[None]]
+BatchResultCallback = Callable[[list[ChunkGraphData]], Awaitable[None]]
 
 
 class GraphExtractionService:
@@ -74,6 +75,7 @@ class GraphExtractionService:
         chunks: list[ChunkGraphData],
         progress_callback: ProgressCallback | None = None,
         log_callback: LogCallback | None = None,
+        batch_result_callback: BatchResultCallback | None = None,
     ) -> list[ChunkGraphData]:
         if not settings.GRAPH_ENTITY_EXTRACTION_ENABLED or not chunks:
             return chunks
@@ -171,6 +173,8 @@ class GraphExtractionService:
             GraphExtractionService._merge_payload(chunk_map, payload)
             processed_batches += 1
             processed_chunks += len(batch)
+            if batch_result_callback:
+                await batch_result_callback(batch)
             if progress_callback:
                 await progress_callback(
                     processed_batches,

@@ -65,6 +65,7 @@ class GraphStoreAdapter(ABC):
         file_name: str,
         file_path: str,
         chunks: list[ChunkGraphData],
+        clear_existing: bool = True,
     ):
         raise NotImplementedError
 
@@ -203,8 +204,10 @@ class KuzuGraphAdapter(GraphStoreAdapter):
         file_name: str,
         file_path: str,
         chunks: list[ChunkGraphData],
+        clear_existing: bool = True,
     ):
-        self.delete_document_graph(file_id)
+        if clear_existing:
+            self.delete_document_graph(file_id)
         self._execute(
             """
             MERGE (kb:KnowledgeBase {id: $kb_id})
@@ -792,8 +795,10 @@ class Neo4jGraphAdapter(GraphStoreAdapter):
         file_name: str,
         file_path: str,
         chunks: list[ChunkGraphData],
+        clear_existing: bool = True,
     ):
-        self.delete_document_graph(file_id)
+        if clear_existing:
+            self.delete_document_graph(file_id)
         self._execute(
             """
             MERGE (kb:KnowledgeBase {id: $kb_id})
@@ -976,8 +981,9 @@ def upsert_document_graph(
     file_name: str,
     file_path: str,
     chunks: list[ChunkGraphData],
+    clear_existing: bool = True,
 ):
-    _get_adapter().upsert_document_graph(kb_id, kb_name, file_id, file_name, file_path, chunks)
+    _get_adapter().upsert_document_graph(kb_id, kb_name, file_id, file_name, file_path, chunks, clear_existing)
 
 
 def delete_document_graph(file_id: str):
