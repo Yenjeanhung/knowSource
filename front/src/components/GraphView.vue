@@ -581,8 +581,8 @@ onUnmounted(() => stopSimulation())
                   <feGaussianBlur stdDeviation="5" result="blur" />
                   <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
                 </filter>
-                <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-                  <polygon points="0 0, 8 3, 0 6" fill="rgba(255,255,255,0.18)" />
+                <marker id="arrowhead" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+                  <polygon points="0 0, 10 4, 0 8" fill="rgba(255,255,255,0.45)" />
                 </marker>
               </defs>
 
@@ -834,16 +834,31 @@ onUnmounted(() => stopSimulation())
 .zoom-btn:nth-child(2) { width: auto; min-width: 44px; font-size: 10px; }
 
 .graph-edge {
-  stroke: rgba(255,255,255,0.09);
-  stroke-width: 1.1;
+  stroke: rgba(255,255,255,0.22);
+  stroke-width: 1.4;
   transition: stroke 250ms, stroke-width 250ms;
 }
-.graph-edge.edge-highlight { stroke: rgba(255,255,255,0.35); stroke-width: 2; }
+.graph-edge.edge-highlight {
+  stroke: rgba(255,255,255,0.55);
+  stroke-width: 2.4;
+}
 
 .edge-label {
-  fill: rgba(255,255,255,0.16); font-size: 10px; text-anchor: middle; pointer-events: none;
+  fill: rgba(255,255,255,0.5);
+  font-size: 11px;
+  text-anchor: middle;
+  pointer-events: none;
+  font-weight: 500;
+  stroke: rgba(0,0,0,0.5);
+  stroke-width: 2;
+  paint-order: stroke;
 }
-.edge-label-hl { fill: rgba(255,255,255,0.5); font-weight: 600; }
+.edge-label-hl {
+  fill: rgba(255,255,255,0.85);
+  font-weight: 700;
+  stroke: rgba(0,0,0,0.65);
+  stroke-width: 3;
+}
 
 .graph-node { cursor: pointer; }
 

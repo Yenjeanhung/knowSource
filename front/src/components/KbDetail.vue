@@ -19,6 +19,24 @@ const processing = ref({})
 const nowTick = ref(Date.now())
 const pollTimers = {}
 let clockTimer = null
+const stageTimers = ref({})
+
+const STAGE_ORDER = ['chunking', 'extraction', 'graph']
+
+function ensureStageTimer(fileId, stageName, progress) {
+  const key = `${fileId}-${stageName}`
+  const cur = stageTimers.value[key]
+  if (!cur) {
+    stageTimers.value = { ...stageTimers.value, [key]: { started: null, ended: null } }
+  }
+  const timer = stageTimers.value[key]
+  if (progress > 0 && !timer.started) {
+    stageTimers.value = { ...stageTimers.value, [key]: { ...timer, started: nowTick.value } }
+  }
+  if (progress >= 100 && timer.started && !timer.ended && !timer.frozen) {
+    stageTimers.value = { ...stageTimers.value, [key]: { ...timer, started: timer.started, ended: nowTick.value } }
+  }
+}
 const showProcessDialog = ref(false)
 const pendingFileId = ref('')
 const pendingFileName = ref('')
@@ -236,6 +254,12 @@ async function deleteFile(fileId) {
     delete pollTimers[fileId]
   }
   delete processing.value[fileId]
+  // clean up stage timers for this file
+  const cleaned = { ...stageTimers.value }
+  for (const key of Object.keys(cleaned)) {
+    if (key.startsWith(`${fileId}-`)) delete cleaned[key]
+  }
+  stageTimers.value = cleaned
   try {
     await apiDeleteFile(fileId)
   } catch {}
@@ -273,6 +297,46 @@ function getExtractionStats(file) {
     entities: extraction.entity_count ?? 0,
     relations: extraction.relation_count ?? 0,
   }
+}
+
+function fmtDuration(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
+function getStageTimeStr(file, stageName) {
+  const stage = file.detail?.stages?.[stageName]
+  if (!stage || stage.progress <= 0) return ''
+  if (stageSkipped(file, stageName)) return ''
+
+  ensureStageTimer(file.id, stageName, stage.progress)
+  const timer = stageTimers.value[`${file.id}-${stageName}`]
+  if (!timer?.started) return ''
+
+  const end = timer.ended || nowTick.value
+  const elapsed = Math.max(0, end - timer.started)
+  return fmtDuration(elapsed)
+}
+
+function stageIcon(file, stageName) {
+  const progress = getStageProgress(file, stageName)
+  if (progress >= 100) return '✓'
+  if (progress > 0) return '◉'
+  return '○'
+}
+
+function stageSkipped(file, stageName) {
+  const label = file.detail?.stages?.[stageName]?.label || ''
+  return label.includes('跳过')
+}
+
+function stageIconClass(file, stageName) {
+  const progress = getStageProgress(file, stageName)
+  if (progress >= 100) return 'icon-done'
+  if (progress > 0) return 'icon-active'
+  return 'icon-pending'
 }
 </script>
 
@@ -397,22 +461,102 @@ function getExtractionStats(file) {
                 </span>
               </span>
             </div>
-            <div class="terminal-body">
-              <div class="terminal-line" v-for="(log, index) in file.logs" :key="`${file.id}-${index}-${log.time}`">
-                <span class="term-prompt">$</span>
-                <span class="term-time">[{{ new Date(log.time).toLocaleTimeString() }}]</span>
-                <span class="term-level" :class="`level-${log.level}`">{{ log.level === 'error' ? 'ERR' : log.level === 'warning' ? 'WRN' : 'INF' }}</span>
-                <span class="term-msg">{{ log.message }}</span>
+            <div class="terminal-body stages-body">
+              <!-- Overall progress -->
+              <div class="stage-row stage-overall">
+                <div class="stage-bar-wrap">
+                  <div class="stage-bar-track stage-track--main">
+                    <div class="stage-bar-fill stage-fill--main" :style="{ width: `${file.progress || 0}%` }"></div>
+                  </div>
+                  <span class="stage-pct stage-pct--main">{{ file.progress || 0 }}%</span>
+                </div>
               </div>
-              <div v-if="file.status === 'processing'" class="terminal-line">
-                <span class="term-prompt blink">$</span>
-                <span class="term-msg dim">{{ file.message || '处理中...' }}</span>
+
+              <!-- Chunking stage -->
+              <div class="stage-row" v-if="file.detail?.stages?.chunking">
+                <div class="stage-head">
+                  <span class="stage-icon" :class="stageIconClass(file, 'chunking')">{{ stageIcon(file, 'chunking') }}</span>
+                  <span class="stage-label">分片进度</span>
+                  <span class="stage-pct">{{ getStageProgress(file, 'chunking') }}%</span>
+                  <span class="stage-time" v-if="getStageTimeStr(file, 'chunking')">{{ getStageTimeStr(file, 'chunking') }}</span>
+                </div>
+                <div class="stage-bar-wrap">
+                  <div class="stage-bar-track stage-track--sub">
+                    <div class="stage-bar-fill stage-fill--chunk" :style="{ width: `${getStageProgress(file, 'chunking')}%` }"></div>
+                  </div>
+                </div>
+                <div class="stage-detail">
+                  <template v-if="getStageProgress(file, 'chunking') >= 100">
+                    共 {{ file.detail.stages.chunking.total || 0 }} 个分片
+                  </template>
+                  <template v-else-if="getStageProgress(file, 'chunking') > 0">
+                    已完成 {{ file.detail.stages.chunking.current || 0 }}/{{ file.detail.stages.chunking.total || 0 }} 个分片
+                  </template>
+                  <template v-else>等待中...</template>
+                </div>
               </div>
-            </div>
-            <div class="terminal-progress" v-if="file.status === 'processing'">
-              <div class="term-track">
-                <div class="term-fill" :style="{ width: `${file.progress || 0}%` }"></div>
+
+              <!-- Extraction stage -->
+              <div class="stage-row" v-if="file.detail?.stages?.extraction">
+                <div class="stage-head">
+                  <span class="stage-icon" :class="stageIconClass(file, 'extraction')">{{ stageIcon(file, 'extraction') }}</span>
+                  <span class="stage-label">实体/关系抽取</span>
+                  <span class="stage-pct">{{ getStageProgress(file, 'extraction') }}%</span>
+                  <span class="stage-time" v-if="getStageTimeStr(file, 'extraction')">{{ getStageTimeStr(file, 'extraction') }}</span>
+                </div>
+                <div class="stage-bar-wrap">
+                  <div class="stage-bar-track stage-track--sub">
+                    <div class="stage-bar-fill stage-fill--extract" :style="{ width: `${getStageProgress(file, 'extraction')}%` }"></div>
+                  </div>
+                </div>
+                <div class="stage-detail" v-if="stageSkipped(file, 'extraction')">已跳过</div>
+                <div class="stage-detail" v-else-if="getStageProgress(file, 'extraction') > 0 || file.detail.stages.extraction.entity_count">
+                  <template v-if="getStageProgress(file, 'extraction') >= 100">
+                    已抽取 {{ file.detail.stages.extraction.entity_count || 0 }} 个实体 · {{ file.detail.stages.extraction.relation_count || 0 }} 个关系
+                  </template>
+                  <template v-else>
+                    <span v-if="file.detail.stages.extraction.total_batches">批次 {{ file.detail.stages.extraction.processed_batches }}/{{ file.detail.stages.extraction.total_batches }}</span>
+                    <span v-if="file.detail.stages.extraction.total_candidate_chunks"> · 分片 {{ file.detail.stages.extraction.processed_chunks }}/{{ file.detail.stages.extraction.total_candidate_chunks }}</span>
+                    <span v-if="file.detail.stages.extraction.entity_count"> · 实体 {{ file.detail.stages.extraction.entity_count }}</span>
+                    <span v-if="file.detail.stages.extraction.relation_count"> · 关系 {{ file.detail.stages.extraction.relation_count }}</span>
+                  </template>
+                </div>
+                <div class="stage-detail" v-else>等待中...</div>
               </div>
+
+              <!-- Graph write stage -->
+              <div class="stage-row" v-if="file.detail?.stages?.graph">
+                <div class="stage-head">
+                  <span class="stage-icon" :class="stageIconClass(file, 'graph')">{{ stageIcon(file, 'graph') }}</span>
+                  <span class="stage-label">写入图数据库</span>
+                  <span class="stage-pct">{{ getStageProgress(file, 'graph') }}%</span>
+                  <span class="stage-time" v-if="getStageTimeStr(file, 'graph')">{{ getStageTimeStr(file, 'graph') }}</span>
+                </div>
+                <div class="stage-bar-wrap">
+                  <div class="stage-bar-track stage-track--sub">
+                    <div class="stage-bar-fill stage-fill--graph" :style="{ width: `${getStageProgress(file, 'graph')}%` }"></div>
+                  </div>
+                </div>
+                <div class="stage-detail" v-if="stageSkipped(file, 'graph')">已跳过</div>
+                <div class="stage-detail" v-else>
+                  <template v-if="getStageProgress(file, 'graph') >= 100">写入完成</template>
+                  <template v-else-if="getStageProgress(file, 'graph') > 0">写入中...</template>
+                  <template v-else>等待中...</template>
+                </div>
+              </div>
+
+              <!-- Log stream (collapsed by default when processing) -->
+              <details class="stage-logs" v-if="file.logs.length">
+                <summary class="logs-toggle">终端日志 ({{ file.logs.length }})</summary>
+                <div class="logs-body">
+                  <div class="terminal-line" v-for="(log, index) in file.logs" :key="`${file.id}-${index}-${log.time}`">
+                    <span class="term-prompt">$</span>
+                    <span class="term-time">[{{ new Date(log.time).toLocaleTimeString() }}]</span>
+                    <span class="term-level" :class="`level-${log.level}`">{{ log.level === 'error' ? 'ERR' : log.level === 'warning' ? 'WRN' : 'INF' }}</span>
+                    <span class="term-msg">{{ log.message }}</span>
+                  </div>
+                </div>
+              </details>
             </div>
           </div>
         </div>
@@ -608,17 +752,152 @@ h1 { font-size: 18px; font-weight: 700; }
   border-radius: 4px;
 }
 
-.terminal-body {
-  max-height: 300px;
-  overflow: auto;
-  padding: 12px 14px;
+.terminal-body.stages-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+/* ---- stage rows ---- */
+.stage-row {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.6;
 }
+
+.stage-overall {
+  margin-bottom: 2px;
+}
+
+.stage-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stage-icon {
+  width: 16px;
+  font-size: 12px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.stage-icon.icon-done { color: #3fb950; }
+.stage-icon.icon-active { color: #58a6ff; }
+.stage-icon.icon-pending { color: #484f58; }
+
+.stage-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #c9d1d9;
+  flex: 1;
+}
+
+.stage-pct {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #8b949e;
+  flex-shrink: 0;
+  min-width: 32px;
+  text-align: right;
+}
+
+.stage-pct--main {
+  font-size: 13px;
+  font-weight: 700;
+  color: #c9d1d9;
+}
+
+.stage-time {
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #8b949e;
+  flex-shrink: 0;
+}
+
+/* ---- stage progress bars ---- */
+.stage-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stage-bar-track {
+  flex: 1;
+  height: 4px;
+  background: #21262d;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.stage-track--main {
+  height: 6px;
+}
+
+.stage-track--sub {
+  height: 3px;
+}
+
+.stage-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 400ms ease;
+}
+
+.stage-fill--main {
+  background: linear-gradient(90deg, #3fb950, #58a6ff);
+}
+
+.stage-fill--chunk {
+  background: #3fb950;
+}
+
+.stage-fill--extract {
+  background: linear-gradient(90deg, #58a6ff, #a371f7);
+}
+
+.stage-fill--graph {
+  background: #d29922;
+}
+
+/* ---- stage detail ---- */
+.stage-detail {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #8b949e;
+  padding-left: 22px;
+}
+
+/* ---- collapsible logs ---- */
+.stage-logs {
+  margin-top: 4px;
+  border-top: 1px solid #21262d;
+  padding-top: 10px;
+}
+
+.logs-toggle {
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #484f58;
+  cursor: pointer;
+  user-select: none;
+}
+
+.logs-toggle:hover { color: #8b949e; }
+
+.logs-body {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 200px;
+  overflow: auto;
+}
+
+/* ---- keep old terminal-log styles ---- */
 
 .terminal-line {
   display: flex;
@@ -673,24 +952,6 @@ h1 { font-size: 18px; font-weight: 700; }
 
 .term-msg.dim {
   color: #8b949e;
-}
-
-.terminal-progress {
-  padding: 0 14px 10px;
-}
-
-.term-track {
-  height: 3px;
-  background: #21262d;
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.term-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #3fb950, #58a6ff);
-  border-radius: 999px;
-  transition: width 300ms ease;
 }
 
 /* Dialog */
