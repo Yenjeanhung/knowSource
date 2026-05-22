@@ -343,11 +343,14 @@ function onClose() {
 <style scoped>
 .preview-overlay {
   position: fixed; inset: 0; z-index: 1000;
-  background: rgba(0,0,0,0.45);
+  background: var(--c-overlay);
   display: flex; align-items: center; justify-content: center;
 }
 .preview-modal {
-  background: #fff; border-radius: 10px;
+  background: var(--c-panel);
+  color: var(--c-fg);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
   width: min(900px, 90vw); height: min(88vh, 750px);
   display: flex; flex-direction: column;
   box-shadow: 0 8px 40px rgba(0,0,0,0.18);
@@ -356,13 +359,13 @@ function onClose() {
 .preview-header {
   display: flex; align-items: center; gap: 10px;
   padding: 12px 18px;
-  border-bottom: 1px solid #e5e5e5;
+  border-bottom: 1px solid var(--c-border);
   flex-shrink: 0;
 }
 .preview-title {
   display: flex; align-items: center; gap: 6px;
   font-size: 13px; font-weight: 600;
-  color: #333; flex: 1;
+  color: var(--c-fg); flex: 1;
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .preview-page {
@@ -372,45 +375,45 @@ function onClose() {
 }
 .preview-close {
   background: none; border: none;
-  font-size: 22px; color: #999; cursor: pointer;
+  font-size: 22px; color: var(--c-secondary); cursor: pointer;
   padding: 0 4px; line-height: 1;
   flex-shrink: 0;
 }
-.preview-close:hover { color: #333; }
+.preview-close:hover { color: var(--c-fg); }
 
 /* PDF controls */
 .pdf-controls {
   display: flex; align-items: center; gap: 4px;
   padding: 8px 14px;
-  border-bottom: 1px solid #e5e5e5;
+  border-bottom: 1px solid var(--c-border);
   flex-shrink: 0; user-select: none;
 }
 .pdf-ctrl-btn {
   background: none; border: 1px solid transparent;
   border-radius: 4px; cursor: pointer;
-  padding: 4px 6px; color: #555;
+  padding: 4px 6px; color: var(--c-secondary);
   display: flex; align-items: center;
   transition: background 120ms, border-color 120ms;
 }
 .pdf-ctrl-btn:hover:not(:disabled) {
-  background: #f5f5f5; border-color: #ddd;
+  background: var(--c-muted); border-color: var(--c-border);
 }
 .pdf-ctrl-btn:disabled { opacity: 0.3; cursor: default; }
 .pdf-page-info {
-  font-size: 12px; color: #555; min-width: 58px; text-align: center;
+  font-size: 12px; color: var(--c-secondary); min-width: 58px; text-align: center;
   font-weight: 500;
 }
 .pdf-zoom-sep {
-  width: 1px; height: 18px; background: #e5e5e5; margin: 0 6px;
+  width: 1px; height: 18px; background: var(--c-border); margin: 0 6px;
 }
 .pdf-zoom-pct {
-  font-size: 11px; color: #888; min-width: 32px; text-align: center;
+  font-size: 11px; color: var(--c-secondary); min-width: 32px; text-align: center;
 }
 
 .preview-body {
   flex: 1; overflow: auto;
   position: relative;
-  background: #f0f0f0;
+  background: var(--c-muted);
 }
 .pdf-viewport {
   min-height: 100%;
@@ -440,22 +443,22 @@ function onClose() {
 .preview-loading-overlay {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(240,240,240,0.7);
-  color: #666; font-size: 14px; gap: 8px;
+  background: color-mix(in srgb, var(--c-muted) 82%, transparent);
+  color: var(--c-secondary); font-size: 14px; gap: 8px;
   z-index: 10;
 }
 .preview-error-overlay {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(240,240,240,0.9);
-  color: #dc2626; font-size: 14px;
+  background: color-mix(in srgb, var(--c-muted) 92%, transparent);
+  color: var(--c-danger); font-size: 14px;
   z-index: 10;
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinner {
   width: 18px; height: 18px;
-  border: 2px solid #ddd; border-top-color: #666;
+  border: 2px solid var(--c-border); border-top-color: var(--c-secondary);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
   display: inline-block;
@@ -463,9 +466,9 @@ function onClose() {
 
 .preview-loading, .preview-error {
   display: flex; align-items: center; justify-content: center;
-  height: 100%; color: #999; font-size: 14px;
+  height: 100%; color: var(--c-secondary); font-size: 14px;
 }
-.preview-error { color: #dc2626; }
+.preview-error { color: var(--c-danger); }
 .preview-text {
   width: 100%; height: 100%;
   margin: 0; padding: 16px 20px;
@@ -473,7 +476,7 @@ function onClose() {
   font-family: var(--font-mono, 'Consolas', monospace);
   white-space: pre-wrap; word-break: break-word;
   overflow-y: auto; overflow-x: hidden;
-  color: #444; background: #fff;
+  color: var(--c-fg); background: var(--c-panel);
 }
 .preview-text :deep(mark) {
   background: #fef08a; color: #333;
