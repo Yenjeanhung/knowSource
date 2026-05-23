@@ -349,6 +349,17 @@ function fmtDuration(ms) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
+function getStatusTitle(status) {
+  const titles = {
+    uploading: '上传中',
+    uploaded: '等待处理',
+    processing: '处理中',
+    indexed: '已完成',
+    failed: '处理失败'
+  }
+  return titles[status] || ''
+}
+
 function getStageTimeStr(file, stageName) {
   const _t = nowTick.value
   const stage = file.detail?.stages?.[stageName]
@@ -474,6 +485,7 @@ function stageIconClass(file, stageName) {
     <div class="file-list" v-if="files.length">
       <div class="file-card" v-for="file in files" :key="file.id">
         <div class="file-main">
+          <div class="status-lamp" :class="file.status" :title="getStatusTitle(file.status)"></div>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="ft-icon">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
             <polyline points="14 2 14 8 20 8" />
@@ -731,6 +743,162 @@ h1 { font-size: 18px; font-weight: 700; }
 .file-list { display: flex; flex-direction: column; gap: 10px; }
 .file-card { border-radius: 18px; border: 1px solid var(--c-border); background: var(--c-panel); overflow: hidden; }
 .file-main { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+/* === 3D效果状态灯 === */
+.status-lamp {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  cursor: help;
+  position: relative;
+  background: linear-gradient(135deg, #3a3a3a 0%, #1a1a1a 100%);
+  box-shadow: 
+    0 2px 4px rgba(0, 0, 0, 0.4),
+    inset 0 1px 2px rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.status-lamp::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  right: 3px;
+  bottom: 3px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, transparent 50%);
+}
+
+/* 处理中/上传中 - 绿灯呼吸效果 */
+.status-lamp.processing,
+.status-lamp.uploading {
+  background: linear-gradient(135deg, #86efac 0%, #4ade80 30%, #22c55e 70%, #16a34a 100%);
+  box-shadow: 
+    0 0 0 2px rgba(74, 222, 128, 0.15),
+    0 0 15px rgba(74, 222, 128, 0.4),
+    0 0 30px rgba(74, 222, 128, 0.2),
+    0 0 50px rgba(74, 222, 128, 0.1),
+    0 3px 6px rgba(0, 0, 0, 0.3);
+  animation: lamp-breathe-green 3s ease-in-out infinite;
+}
+
+/* 已完成 - 绿灯常亮 */
+.status-lamp.indexed {
+  background: linear-gradient(135deg, #6ee7b7 0%, #34d399 50%, #10b981 100%);
+  box-shadow: 
+    0 0 0 2px rgba(74, 222, 128, 0.2),
+    0 0 15px rgba(74, 222, 128, 0.5),
+    0 3px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* 失败 - 红灯快速闪烁 */
+.status-lamp.failed {
+  background: linear-gradient(135deg, #fca5a5 0%, #f87171 50%, #ef4444 100%);
+  box-shadow: 
+    0 0 0 3px rgba(248, 113, 113, 0.3),
+    0 0 25px rgba(248, 113, 113, 0.8),
+    0 0 50px rgba(248, 113, 113, 0.4),
+    0 4px 8px rgba(0, 0, 0, 0.3);
+  animation: lamp-blink-red 0.4s ease-in-out infinite;
+}
+
+/* 等待处理 - 黄灯微弱常亮 */
+.status-lamp.uploaded {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 50%, #fbbf24 100%);
+  box-shadow: 
+    0 0 0 2px rgba(251, 191, 36, 0.2),
+    0 0 10px rgba(251, 191, 36, 0.4),
+    0 3px 6px rgba(0, 0, 0, 0.3);
+  opacity: 0.7;
+}
+
+@keyframes lamp-breathe-green {
+  0%, 100% { 
+    box-shadow: 
+      0 0 0 1px rgba(74, 222, 128, 0.1),
+      0 0 10px rgba(74, 222, 128, 0.25),
+      0 0 25px rgba(74, 222, 128, 0.15),
+      0 0 45px rgba(74, 222, 128, 0.08),
+      0 3px 6px rgba(0, 0, 0, 0.3);
+    transform: scale(0.98);
+    opacity: 0.75;
+  }
+  50% { 
+    box-shadow: 
+      0 0 0 4px rgba(74, 222, 128, 0.3),
+      0 0 20px rgba(74, 222, 128, 0.6),
+      0 0 45px rgba(74, 222, 128, 0.35),
+      0 0 75px rgba(74, 222, 128, 0.15),
+      0 0 100px rgba(74, 222, 128, 0.08),
+      0 4px 8px rgba(0, 0, 0, 0.35);
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+
+@keyframes lamp-blink-red {
+  0%, 100% { 
+    box-shadow: 
+      0 0 0 3px rgba(248, 113, 113, 0.3),
+      0 0 25px rgba(248, 113, 113, 0.8),
+      0 0 50px rgba(248, 113, 113, 0.4),
+      0 4px 8px rgba(0, 0, 0, 0.3);
+    opacity: 1;
+  }
+  50% { 
+    box-shadow: 
+      0 0 0 1px rgba(248, 113, 113, 0.1),
+      0 0 8px rgba(248, 113, 113, 0.3),
+      0 0 15px rgba(248, 113, 113, 0.15),
+      0 2px 4px rgba(0, 0, 0, 0.2);
+    opacity: 0.4;
+  }
+}
+@keyframes breathe-green {
+  0%, 100% { opacity: 0.4; box-shadow: 0 0 4px rgba(74, 222, 128, 0.3); }
+  50% { opacity: 1; box-shadow: 0 0 14px rgba(74, 222, 128, 0.9); }
+}
+@keyframes blink-red {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+@keyframes breathe-blue {
+  0%, 100% { opacity: 0.4; box-shadow: 0 0 4px rgba(96, 165, 250, 0.3); }
+  50% { opacity: 1; box-shadow: 0 0 14px rgba(96, 165, 250, 0.9); }
+}
+
+/* === 方案一回退代码备份 === */
+/* 
+.status-light {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-light.processing {
+  background: #4ADE80;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
+  animation: breathe-green 2s ease-in-out infinite;
+}
+.status-light.indexed {
+  background: #4ADE80;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.4);
+}
+.status-light.failed {
+  background: #F87171;
+  box-shadow: 0 0 8px rgba(248, 113, 113, 0.5);
+  animation: blink-red 0.5s ease-in-out infinite;
+}
+.status-light.uploading {
+  background: #60A5FA;
+  box-shadow: 0 0 8px rgba(96, 165, 250, 0.5);
+  animation: breathe-blue 2s ease-in-out infinite;
+}
+.status-light.uploaded {
+  background: #FBBF24;
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.4);
+}
+*/
 .ft-icon { color: var(--c-secondary); flex-shrink: 0; }
 .file-info { flex: 1; min-width: 0; }
 .file-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -843,14 +1011,34 @@ h1 { font-size: 18px; font-weight: 700; }
 
 .stage-icon {
   width: 16px;
+  height: 16px;
   font-size: 12px;
   text-align: center;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.stage-icon.icon-done { color: #3fb950; }
-.stage-icon.icon-active { color: #58a6ff; }
+.stage-icon.icon-done { 
+  color: #3fb950; 
+}
+.stage-icon.icon-active { 
+  color: #4ade80; 
+  animation: pulse-glow-green 1.5s ease-in-out infinite;
+}
 .stage-icon.icon-pending { color: #484f58; }
+
+@keyframes pulse-glow-green {
+  0%, 100% { 
+    text-shadow: 0 0 2px rgba(74, 222, 128, 0.2); 
+    opacity: 0.3;
+  }
+  50% { 
+    text-shadow: 0 0 15px rgba(74, 222, 128, 1), 0 0 30px rgba(74, 222, 128, 0.6), 0 0 50px rgba(74, 222, 128, 0.3); 
+    opacity: 1;
+  }
+}
 
 .stage-label {
   font-size: 12px;
