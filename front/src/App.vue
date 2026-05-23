@@ -6,7 +6,7 @@ const router = useRouter()
 const isSidebarCollapsed = ref(false)
 const SIDEBAR_STORAGE_KEY = 'knowsource.sidebar.collapsed'
 const THEME_STORAGE_KEY = 'knowsource.theme'
-const theme = ref('light')
+const theme = ref('dark')
 
 const menuItems = computed(() => [
   { to: '/', label: '知识库', exact: true, hint: '知识库' },
@@ -43,11 +43,10 @@ onMounted(() => {
   const savedTheme = localStorage.getItem(THEME_STORAGE_KEY)
   if (savedTheme === 'light' || savedTheme === 'dark') {
     applyTheme(savedTheme)
-    return
+  } else {
+    // 默认使用深色模式
+    applyTheme('dark')
   }
-
-  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-  applyTheme(prefersDark ? 'dark' : 'light')
 })
 </script>
 
