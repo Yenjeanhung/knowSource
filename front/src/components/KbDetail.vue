@@ -21,7 +21,7 @@ const pollTimers = {}
 let clockTimer = null
 const stageTimers = ref({})
 
-const STAGE_ORDER = ['chunking', 'vectorizing', 'extraction', 'graph']
+const STAGE_ORDER = ['chunking', 'vectorizing', 'extraction']
 
 function ensureStageTimer(fileId, stageName, progress) {
   const key = `${fileId}-${stageName}`
@@ -188,7 +188,6 @@ async function confirmProcess(extractGraph) {
             relation_count: 0,
             label: '等待开始',
           },
-          graph: { progress: 0, label: '等待开始' },
         },
       }
     }
@@ -231,7 +230,6 @@ async function batchProcess(extractGraph = true) {
               relation_count: 0,
               label: '等待开始',
             },
-            graph: { progress: 0, label: '等待开始' },
           },
         }
       }
@@ -573,7 +571,7 @@ function stageIconClass(file, stageName) {
               <div class="stage-row" v-if="file.detail?.stages?.extraction">
                 <div class="stage-head">
                   <span class="stage-icon" :class="stageIconClass(file, 'extraction')">{{ stageIcon(file, 'extraction') }}</span>
-                  <span class="stage-label">实体/关系抽取</span>
+                  <span class="stage-label">实体/关系抽取+保存图数据库</span>
                   <span class="stage-pct">{{ getStageProgress(file, 'extraction') }}%</span>
                   <span class="stage-time" v-if="getStageTimeStr(file, 'extraction')">{{ getStageTimeStr(file, 'extraction') }}</span>
                 </div>
@@ -597,27 +595,6 @@ function stageIconClass(file, stageName) {
                   </template>
                 </div>
                 <div class="stage-detail" v-else>等待中...</div>
-              </div>
-
-              <!-- Graph write stage -->
-              <div class="stage-row" v-if="file.detail?.stages?.graph">
-                <div class="stage-head">
-                  <span class="stage-icon" :class="stageIconClass(file, 'graph')">{{ stageIcon(file, 'graph') }}</span>
-                  <span class="stage-label">写入图数据库</span>
-                  <span class="stage-pct">{{ getStageProgress(file, 'graph') }}%</span>
-                  <span class="stage-time" v-if="getStageTimeStr(file, 'graph')">{{ getStageTimeStr(file, 'graph') }}</span>
-                </div>
-                <div class="stage-bar-wrap">
-                  <div class="stage-bar-track stage-track--sub">
-                    <div class="stage-bar-fill stage-fill--graph" :style="{ width: `${getStageProgress(file, 'graph')}%` }"></div>
-                  </div>
-                </div>
-                <div class="stage-detail" v-if="stageSkipped(file, 'graph')">已跳过</div>
-                <div class="stage-detail" v-else>
-                  <template v-if="getStageProgress(file, 'graph') >= 100">写入完成</template>
-                  <template v-else-if="getStageProgress(file, 'graph') > 0">写入中...</template>
-                  <template v-else>等待中...</template>
-                </div>
               </div>
 
               <!-- Log stream (collapsed by default when processing) -->
@@ -938,10 +915,6 @@ h1 { font-size: 18px; font-weight: 700; }
 
 .stage-fill--vector {
   background: linear-gradient(90deg, #14b8a6, #22c55e);
-}
-
-.stage-fill--graph {
-  background: #d29922;
 }
 
 /* ---- stage detail ---- */
