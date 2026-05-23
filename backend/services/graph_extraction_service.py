@@ -177,7 +177,7 @@ class GraphExtractionService:
                         await log_callback(
                             f"抽取完成：批次 {batch_index + 1}/{total_batches}，耗时 {duration:.1f}s，实体 {entity_count}，关系 {relation_count}"
                         )
-                    return batch, payload
+                    return batch, payload, False
                 except Exception as exc:
                     duration = perf_counter() - batch_started
                     logger.warning(
@@ -193,11 +193,14 @@ class GraphExtractionService:
                         await log_callback(
                             f"抽取失败：批次 {batch_index + 1}/{total_batches}，耗时 {duration:.1f}s，错误 {exc}"
                         )
-                    return batch, {"chunks": []}
+                    return batch, {"chunks": []}, True
 
+        failed_batches = 0
         tasks = [asyncio.create_task(run_batch(index, batch)) for index, batch in enumerate(batches)]
         for future in asyncio.as_completed(tasks):
-            batch, payload = await future
+            batch, payload, is_failed = await future
+            if is_failed:
+                failed_batches += 1
             GraphExtractionService._merge_payload(chunk_map, payload)
             async with progress_lock:
                 processed_batches += 1
@@ -219,12 +222,22 @@ class GraphExtractionService:
                     current_running_batches,
                 )
 
+        if failed_batches > 0:
+            error_message = f"Graph extraction partially failed: {failed_batches}/{total_batches} batches failed"
+            logger.error(error_message)
+            if log_callback:
+                await log_callback(f"抽取阶段部分失败：{failed_batches}/{total_batches} 个批次失败")
+            # 如果超过一半批次失败，抛出异常
+            if failed_batches > total_batches // 2:
+                raise RuntimeError(f"Graph extraction failed: {failed_batches}/{total_batches} batches failed")
+
         logger.info(
-            "Graph extraction finished: file_name=%s total_chunks=%s candidate_chunks=%s total_batches=%s duration_ms=%.0f",
+            "Graph extraction finished: file_name=%s total_chunks=%s candidate_chunks=%s total_batches=%s failed_batches=%s duration_ms=%.0f",
             file_name,
             len(chunks),
             total_candidate_chunks,
             total_batches,
+            failed_batches,
             (perf_counter() - started_at) * 1000,
         )
         if log_callback:
