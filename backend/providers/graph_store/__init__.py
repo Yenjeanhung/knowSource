@@ -10,8 +10,13 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 import hashlib
+import threading
 
 from config import settings
+
+# Kùzu database only allows one write transaction at a time
+# This lock ensures thread-safe write operations
+_kuzu_write_lock = threading.Lock()
 
 
 @dataclass
@@ -133,8 +138,19 @@ class KuzuGraphAdapter(GraphStoreAdapter):
         return kuzu.Connection(self._db)
 
     def _execute(self, query: str, parameters: dict | None = None):
-        conn = self._connection()
-        return conn.execute(query, parameters=parameters or {})
+        # Kùzu only allows one write transaction at a time
+        # Determine if this is a write operation
+        query_upper = query.strip().upper()
+        is_write = any(query_upper.startswith(op) for op in 
+                       ('CREATE', 'INSERT', 'UPDATE', 'DELETE', 'DROP', 'MERGE', 'REMOVE', 'SET'))
+        
+        if is_write:
+            with _kuzu_write_lock:
+                conn = self._connection()
+                return conn.execute(query, parameters=parameters or {})
+        else:
+            conn = self._connection()
+            return conn.execute(query, parameters=parameters or {})
 
     def _execute_dict(self, query: str, parameters: dict | None = None) -> list[dict]:
         result = self._execute(query, parameters)

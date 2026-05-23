@@ -611,17 +611,17 @@ function stageIconClass(file, stageName) {
           </button>
         </div>
 
-        <div class="process-panel" v-if="file.status === 'processing' || file.status === 'indexed'">
+        <div class="process-panel" v-if="file.status === 'processing' || file.status === 'indexed' || file.status === 'failed'">
           <div class="terminal">
             <div class="terminal-bar">
             <span class="terminal-title">
-              {{ file.status === 'indexed' ? '处理完成' : '处理中...' }}
+              {{ file.status === 'indexed' ? '处理完成' : (file.status === 'failed' ? '处理失败' : '处理中...') }}
               &mdash; {{ file.name }}
             </span>
             <span class="terminal-meta">
               <span class="terminal-pill" v-if="!stageSkipped(file, 'extraction')">{{ file.progress || 0 }}%</span>
               <span class="terminal-time-display" v-if="file.status === 'processing'">处理时间 {{ getElapsedLabel(file) }}</span>
-              <span class="terminal-time-display done" v-else-if="file.status === 'indexed'">总耗时 {{ getElapsedLabel(file) }}</span>
+            <span class="terminal-time-display done" v-else-if="file.status === 'indexed' || file.status === 'failed'">总耗时 {{ getElapsedLabel(file) }}</span>
               <span v-if="file.detail?.summary" class="terminal-pill">
                 分片 {{ file.detail.summary.chunk_count || 0 }}
               </span>
@@ -698,7 +698,7 @@ function stageIconClass(file, stageName) {
               </div>
 
               <!-- Log stream (collapsed by default when processing) -->
-              <details class="stage-logs" v-if="file.logs.length" open>
+              <details class="stage-logs" v-if="file.logs.length || file.status === 'failed'" open>
                 <summary class="logs-toggle">终端日志 ({{ file.logs.length }})</summary>
                 <div class="logs-body">
                   <div class="terminal-line" v-for="(log, index) in file.logs" :key="`${file.id}-${index}-${log.time}`">
@@ -707,20 +707,19 @@ function stageIconClass(file, stageName) {
                     <span class="term-level" :class="`level-${log.level}`">{{ log.level === 'error' ? 'ERR' : log.level === 'warning' ? 'WRN' : 'INF' }}</span>
                     <span class="term-msg">{{ log.message }}</span>
                   </div>
+                  <!-- Error message in red when failed -->
+                  <div class="terminal-line error-line" v-if="file.status === 'failed' && file.message">
+                    <span class="term-prompt">$</span>
+                    <span class="term-time">[{{ new Date().toLocaleTimeString() }}]</span>
+                    <span class="term-level level-error">ERR</span>
+                    <span class="term-msg error-msg">{{ file.message }}</span>
+                  </div>
                 </div>
               </details>
             </div>
           </div>
         </div>
 
-        <div class="file-sub err" v-if="file.status === 'failed' && file.message">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="8" x2="12" y2="12" />
-            <line x1="12" y1="16" x2="12.01" y2="16" />
-          </svg>
-          {{ file.message }}
-        </div>
       </div>
     </div>
 
@@ -1312,6 +1311,11 @@ h1 { font-size: 18px; font-weight: 700; }
 
 .term-msg.dim {
   color: #8b949e;
+}
+
+.term-msg.error-msg {
+  color: #f85149;
+  font-weight: 600;
 }
 
 /* Dialog */
