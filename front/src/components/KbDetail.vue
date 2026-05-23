@@ -413,7 +413,18 @@ function stageIcon(file, stageName) {
 
 function stageSkipped(file, stageName) {
   const label = file.detail?.stages?.[stageName]?.label || ''
-  return label.includes('跳过')
+  if (label.includes('跳过')) return true
+  
+  // 如果是 extraction 阶段，且没有配置任何批次，说明不会进行抽取
+  if (stageName === 'extraction') {
+    const extraction = file.detail?.stages?.extraction
+    // 如果没有配置批次，且进度为0，说明不会进行抽取（仅分片模式）
+    if (extraction && extraction.progress === 0 && extraction.total_batches === 0) {
+      return true
+    }
+  }
+  
+  return false
 }
 
 function stageIconClass(file, stageName) {
@@ -588,8 +599,8 @@ function stageIconClass(file, stageName) {
                 </div>
               </div>
 
-              <!-- Extraction stage -->
-              <div class="stage-row" v-if="file.detail?.stages?.extraction">
+              <!-- Extraction stage - only show when extraction will actually run -->
+              <div class="stage-row" v-if="file.detail?.stages?.extraction && !stageSkipped(file, 'extraction')">
                 <div class="stage-head">
                   <span class="stage-icon" :class="stageIconClass(file, 'extraction')">{{ stageIcon(file, 'extraction') }}</span>
                   <span class="stage-label">实体/关系抽取与生成图谱</span>
@@ -601,8 +612,7 @@ function stageIconClass(file, stageName) {
                     <div class="stage-bar-fill stage-fill--extract" :style="{ width: `${getStageProgress(file, 'extraction')}%` }"></div>
                   </div>
                 </div>
-                <div class="stage-detail" v-if="stageSkipped(file, 'extraction')">已跳过</div>
-                <div class="stage-detail" v-else-if="getStageProgress(file, 'extraction') > 0 || file.detail.stages.extraction.entity_count">
+                <div class="stage-detail" v-if="getStageProgress(file, 'extraction') > 0 || file.detail.stages.extraction.entity_count">
                   <template v-if="getStageProgress(file, 'extraction') >= 100">
                     已抽取 {{ file.detail.stages.extraction.entity_count || 0 }} 个实体 · {{ file.detail.stages.extraction.relation_count || 0 }} 个关系
                   </template>
@@ -767,6 +777,7 @@ h1 { font-size: 18px; font-weight: 700; }
   bottom: 3px;
   border-radius: 50%;
   background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, transparent 50%);
+  pointer-events: none;
 }
 
 /* 处理中/上传中 - 绿灯呼吸效果 */
