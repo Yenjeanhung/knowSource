@@ -511,8 +511,8 @@ onUnmounted(() => stopSimulation())
           <button class="toggle-btn" :class="{ on: viewMode === 'list' }" @click="viewMode = 'list'">列表视图</button>
         </div>
         <div class="toolbar-meta">
-          <span class="meta-chip">实体 {{ nodes.length }}</span>
-          <span class="meta-chip">关系 {{ edges.length }}</span>
+          <span class="meta-chip">实体 {{ summary.entity_total }}</span>
+          <span class="meta-chip">关系 {{ summary.relation_total }}</span>
           <span v-if="viewMode === 'graph'" class="meta-chip">{{ Math.round(zoomLevel * 100) }}%</span>
         </div>
       </div>

@@ -19,6 +19,7 @@ from providers.embedding import create_embeddings
 from providers.graph_store import (
     ChunkGraphData,
     delete_document_graph,
+    fetch_graph_view,
     get_graph_store_provider_name,
     upsert_document_graph,
 )
@@ -35,6 +36,17 @@ LOG_TAIL_LIMIT = 120
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _visual_stage_name(stage: str | None) -> str | None:
+    mapping = {
+        "chunking": "chunking",
+        "vectorizing": "vectorizing",
+        "extract_prepare": "extraction",
+        "extracting": "extraction",
+        "graph_writing": "graph",
+    }
+    return mapping.get(stage or "")
 
 
 class FileService:
@@ -173,8 +185,23 @@ class FileService:
         finished: bool = False,
     ):
         detail = FileService._read_detail(file)
+        now_iso = _utc_now_iso()
+        old_stage = detail.get("stage")
+        old_visual_stage = _visual_stage_name(old_stage)
+        new_visual_stage = _visual_stage_name(stage if stage is not None else old_stage)
         if detail.get("started_at") is None:
-            detail["started_at"] = _utc_now_iso()
+            detail["started_at"] = now_iso
+        if stage is not None and old_visual_stage != new_visual_stage and old_visual_stage:
+            previous = detail["stages"].get(old_visual_stage)
+            if previous and previous.get("started_at") and not previous.get("finished_at"):
+                previous["finished_at"] = now_iso
+                started = datetime.fromisoformat(previous["started_at"])
+                ended = datetime.fromisoformat(previous["finished_at"])
+                previous["elapsed_ms"] = max(0, int((ended - started).total_seconds() * 1000))
+        if new_visual_stage:
+            current = detail["stages"].get(new_visual_stage)
+            if current and current.get("started_at") is None:
+                current["started_at"] = now_iso
         if progress is not None:
             file.progress = max(0, min(100, progress))
             detail["stages"]["total"]["progress"] = file.progress
@@ -194,7 +221,20 @@ class FileService:
         if summary:
             detail["summary"].update(summary)
         if finished:
-            detail["finished_at"] = _utc_now_iso()
+            detail["finished_at"] = now_iso
+        for stage_name in ("chunking", "vectorizing", "extraction", "graph"):
+            stage_detail = detail["stages"].get(stage_name)
+            if not stage_detail or not stage_detail.get("started_at"):
+                continue
+            if stage_detail.get("progress", 0) >= 100 and not stage_detail.get("finished_at"):
+                stage_detail["finished_at"] = now_iso
+            ended = (
+                datetime.fromisoformat(stage_detail["finished_at"])
+                if stage_detail.get("finished_at")
+                else datetime.now(timezone.utc)
+            )
+            started = datetime.fromisoformat(stage_detail["started_at"])
+            stage_detail["elapsed_ms"] = max(0, int((ended - started).total_seconds() * 1000))
         if detail.get("started_at"):
             started = datetime.fromisoformat(detail["started_at"])
             ended = datetime.fromisoformat(detail["finished_at"]) if detail.get("finished_at") else datetime.now(timezone.utc)
@@ -626,8 +666,8 @@ class FileService:
                     extraction_started = perf_counter()
                     last_ui_update = {"batch": 0, "ts": perf_counter()}
                     last_log_flush = {"ts": 0.0}
-                    accumulated_entity_count = {"value": 0}
-                    accumulated_relation_count = {"value": 0}
+                    unique_entities: set[tuple[str, str]] = set()
+                    unique_relations: set[tuple[str, str, str, str, str]] = set()
 
                     async def batch_result_callback(batch_chunks: list):
                         await asyncio.to_thread(
@@ -638,20 +678,25 @@ class FileService:
                             file.name,
                             file.path or "",
                             batch_chunks,
-                            False,  # clear_existing=False, incremental write
+                            False,
                         )
-                        accumulated_entity_count["value"] += sum(
-                            len(chunk.entities) for chunk in batch_chunks
-                        )
-                        accumulated_relation_count["value"] += sum(
-                            len(chunk.relations) for chunk in batch_chunks
-                        )
+                        for chunk in batch_chunks:
+                            for entity in chunk.entities:
+                                unique_entities.add((entity.name.lower(), entity.entity_type.lower()))
+                            for relation in chunk.relations:
+                                unique_relations.add((
+                                    relation.source_name.lower(),
+                                    relation.source_type.lower(),
+                                    relation.relation_type.lower(),
+                                    relation.target_name.lower(),
+                                    relation.target_type.lower(),
+                                ))
                         await FileService._commit_runtime_state(
                             db,
                             file,
                             extraction_progress={
-                                "entity_count": accumulated_entity_count["value"],
-                                "relation_count": accumulated_relation_count["value"],
+                                "entity_count": len(unique_entities),
+                                "relation_count": len(unique_relations),
                             },
                         )
 
@@ -705,8 +750,8 @@ class FileService:
                                 "total_batches": total_batches,
                                 "processed_chunks": processed_chunks,
                                 "total_candidate_chunks": total_candidate_chunks,
-                                "entity_count": accumulated_entity_count["value"],
-                                "relation_count": accumulated_relation_count["value"],
+                                "entity_count": len(unique_entities),
+                                "relation_count": len(unique_relations),
                                 "started_batches": started_batches,
                                 "running_batches": running_batches,
                                 "label": extraction_label,
@@ -742,6 +787,16 @@ class FileService:
                     entity_count = sum(len(chunk.entities) for chunk in graph_chunks)
                     relation_count = sum(len(chunk.relations) for chunk in graph_chunks)
                     extraction_ms = (perf_counter() - extraction_started) * 1000
+                    graph_view = await asyncio.to_thread(
+                        fetch_graph_view,
+                        file.kb_id,
+                        file.id,
+                        "",
+                        "",
+                    )
+                    graph_summary = graph_view.get("summary", {}) if isinstance(graph_view, dict) else {}
+                    entity_count = int(graph_summary.get("entity_total", entity_count) or 0)
+                    relation_count = int(graph_summary.get("relation_total", relation_count) or 0)
                     logger.info(
                         "Graph extraction completed: file_id=%s kb_id=%s chunks=%s entities=%s relations=%s duration_ms=%.0f",
                         file.id,
@@ -754,57 +809,21 @@ class FileService:
                     await FileService._commit_runtime_state(
                         db,
                         file,
-                        progress=82,
+                        progress=90,
                         message=f"抽取完成：实体 {entity_count}，关系 {relation_count}",
-                        stage="graph_writing",
+                        stage="saving",
                         extraction_progress={
                             "progress": 100,
                             "entity_count": entity_count,
                             "relation_count": relation_count,
                             "label": f"已抽取实体 {entity_count}，关系 {relation_count}",
                         },
+                        graph_progress={"progress": 100, "label": "图谱已逐批写入"},
                         summary={"entity_count": entity_count, "relation_count": relation_count},
-                        graph_progress={"progress": 15, "label": "准备写入图谱"},
-                        log_message=f"实体与关系抽取完成，用时 {extraction_ms / 1000:.1f}s",
-                    )
-
-                    graph_write_started = perf_counter()
-                    await FileService._commit_runtime_state(
-                        db,
-                        file,
-                        progress=86,
-                        message="正在写入图谱",
-                        stage="graph_writing",
-                        graph_progress={"progress": 40, "label": f"正在写入图数据库（{graph_provider_name}）"},
-                        log_message=f"开始写入图谱，provider={graph_provider_name}",
-                    )
-                    await asyncio.to_thread(
-                        upsert_document_graph,
-                        file.kb_id,
-                        kb.name,
-                        file.id,
-                        file.name,
-                        file.path or "",
-                        graph_chunks,
-                        False,  # clear_existing=False, incremental data already written
-                    )
-                    graph_ms = (perf_counter() - graph_write_started) * 1000
-                    logger.info(
-                        "Graph write completed: file_id=%s kb_id=%s provider=%s chunks=%s duration_ms=%.0f",
-                        file.id,
-                        file.kb_id,
-                        graph_provider_name,
-                        len(graph_chunks),
-                        graph_ms,
-                    )
-                    await FileService._commit_runtime_state(
-                        db,
-                        file,
-                        progress=92,
-                        message="图谱写入完成，正在保存分片记录",
-                        stage="saving",
-                        graph_progress={"progress": 100, "label": "图谱写入完成"},
-                        log_message=f"图谱写入完成，用时 {graph_ms / 1000:.1f}s",
+                        log_message=(
+                            f"实体与关系抽取完成，用时 {extraction_ms / 1000:.1f}s，"
+                            f"实体 {entity_count}，关系 {relation_count}"
+                        ),
                     )
                 else:
                     await FileService._commit_runtime_state(

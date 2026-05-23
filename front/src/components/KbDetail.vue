@@ -347,6 +347,12 @@ function getStageTimeStr(file, stageName) {
   if (!stage || stage.progress <= 0) return ''
   if (stageSkipped(file, stageName)) return ''
 
+  if (stage.started_at) {
+    const started = new Date(stage.started_at).getTime()
+    const ended = stage.finished_at ? new Date(stage.finished_at).getTime() : nowTick.value
+    return fmtDuration(Math.max(0, ended - started))
+  }
+
   ensureStageTimer(file.id, stageName, stage.progress)
   const timer = stageTimers.value[`${file.id}-${stageName}`]
   if (!timer?.started) return ''
