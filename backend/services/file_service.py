@@ -105,6 +105,8 @@ class FileService:
                     "progress": 0,
                     "processed_batches": 0,
                     "total_batches": 0,
+                    "started_batches": 0,
+                    "running_batches": 0,
                     "processed_chunks": 0,
                     "total_candidate_chunks": 0,
                     "entity_count": 0,
@@ -658,33 +660,56 @@ class FileService:
                         total_batches: int,
                         processed_chunks: int,
                         total_candidate_chunks: int,
+                        started_batches: int,
+                        running_batches: int,
                     ):
                         ratio = processed_batches / max(total_batches, 1)
-                        progress = 56 + int(ratio * 24)
+                        dispatch_ratio = started_batches / max(total_batches, 1)
+                        visual_ratio = max(ratio, dispatch_ratio * 0.35)
+                        progress = 56 + int(visual_ratio * 24)
                         now = perf_counter()
                         if (
                             processed_batches != total_batches
                             and processed_batches != 1
+                            and started_batches != 1
                             and now - last_ui_update["ts"] < 0.5
                         ):
                             return
-                        last_ui_update["batch"] = processed_batches
+                        last_ui_update["batch"] = max(processed_batches, started_batches)
                         last_ui_update["ts"] = now
+                        if processed_batches > 0:
+                            extraction_message = (
+                                f"正在抽取实体与关系：已完成批次 {processed_batches}/{total_batches}"
+                            )
+                            extraction_label = f"已完成批次 {processed_batches}/{total_batches}"
+                        elif started_batches > 0:
+                            extraction_message = (
+                                f"已发起抽取请求：{started_batches}/{total_batches}，进行中 {running_batches}"
+                            )
+                            extraction_label = f"已发起 {started_batches}/{total_batches}，进行中 {running_batches}"
+                        else:
+                            extraction_message = f"正在准备抽取批次 0/{total_batches}"
+                            extraction_label = f"准备中 0/{total_batches}"
                         await FileService._commit_runtime_state(
                             db,
                             file,
                             progress=progress,
-                            message=f"正在抽取实体与关系：批次 {processed_batches}/{total_batches}",
+                            message=extraction_message,
                             stage="extracting",
                             extraction_progress={
-                                "progress": int(ratio * 100),
+                                "progress": max(
+                                    1 if started_batches > 0 else 0,
+                                    int(visual_ratio * 100),
+                                ),
                                 "processed_batches": processed_batches,
                                 "total_batches": total_batches,
                                 "processed_chunks": processed_chunks,
                                 "total_candidate_chunks": total_candidate_chunks,
                                 "entity_count": accumulated_entity_count["value"],
                                 "relation_count": accumulated_relation_count["value"],
-                                "label": f"已完成批次 {processed_batches}/{total_batches}",
+                                "started_batches": started_batches,
+                                "running_batches": running_batches,
+                                "label": extraction_label,
                             },
                         )
 

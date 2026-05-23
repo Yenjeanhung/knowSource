@@ -180,6 +180,8 @@ async function confirmProcess(extractGraph) {
             progress: 0,
             processed_batches: 0,
             total_batches: 0,
+            started_batches: 0,
+            running_batches: 0,
             processed_chunks: 0,
             total_candidate_chunks: 0,
             entity_count: 0,
@@ -221,6 +223,8 @@ async function batchProcess(extractGraph = true) {
               progress: 0,
               processed_batches: 0,
               total_batches: 0,
+              started_batches: 0,
+              running_batches: 0,
               processed_chunks: 0,
               total_candidate_chunks: 0,
               entity_count: 0,
@@ -579,6 +583,8 @@ function stageIconClass(file, stageName) {
                   </template>
                   <template v-else>
                     <span v-if="file.detail.stages.extraction.total_batches">批次 {{ file.detail.stages.extraction.processed_batches }}/{{ file.detail.stages.extraction.total_batches }}</span>
+                    <span v-if="file.detail.stages.extraction.started_batches"> · 已发起 {{ file.detail.stages.extraction.started_batches }}</span>
+                    <span v-if="file.detail.stages.extraction.running_batches"> · 进行中 {{ file.detail.stages.extraction.running_batches }}</span>
                     <span v-if="file.detail.stages.extraction.total_candidate_chunks"> · 分片 {{ file.detail.stages.extraction.processed_chunks }}/{{ file.detail.stages.extraction.total_candidate_chunks }}</span>
                     <span v-if="file.detail.stages.extraction.entity_count"> · 实体 {{ file.detail.stages.extraction.entity_count }}</span>
                     <span v-if="file.detail.stages.extraction.relation_count"> · 关系 {{ file.detail.stages.extraction.relation_count }}</span>
@@ -609,7 +615,7 @@ function stageIconClass(file, stageName) {
               </div>
 
               <!-- Log stream (collapsed by default when processing) -->
-              <details class="stage-logs" v-if="file.logs.length">
+              <details class="stage-logs" v-if="file.logs.length" open>
                 <summary class="logs-toggle">终端日志 ({{ file.logs.length }})</summary>
                 <div class="logs-body">
                   <div class="terminal-line" v-for="(log, index) in file.logs" :key="`${file.id}-${index}-${log.time}`">

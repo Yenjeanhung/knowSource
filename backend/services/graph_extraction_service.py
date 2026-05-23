@@ -63,7 +63,7 @@ Chunks:
 {chunk_payload}
 """
 
-ProgressCallback = Callable[[int, int, int, int], Awaitable[None]]
+ProgressCallback = Callable[[int, int, int, int, int, int], Awaitable[None]]
 LogCallback = Callable[[str], Awaitable[None]]
 BatchResultCallback = Callable[[list[ChunkGraphData]], Awaitable[None]]
 
@@ -114,9 +114,22 @@ class GraphExtractionService:
             )
 
         semaphore = asyncio.Semaphore(concurrency)
+        progress_lock = asyncio.Lock()
         processed_batches = 0
         processed_chunks = 0
+        started_batches = 0
+        running_batches = 0
         started_at = perf_counter()
+
+        if progress_callback:
+            await progress_callback(
+                processed_batches,
+                total_batches,
+                processed_chunks,
+                total_candidate_chunks,
+                started_batches,
+                running_batches,
+            )
 
         async def run_batch(batch_index: int, batch: list[ChunkGraphData]):
             prompt = GRAPH_EXTRACTION_TEMPLATE.format(
@@ -124,7 +137,22 @@ class GraphExtractionService:
                 chunk_payload=GraphExtractionService._render_chunks(batch),
             )
             async with semaphore:
+                nonlocal started_batches, running_batches
                 batch_started = perf_counter()
+                async with progress_lock:
+                    started_batches += 1
+                    running_batches += 1
+                    current_started_batches = started_batches
+                    current_running_batches = running_batches
+                if progress_callback:
+                    await progress_callback(
+                        processed_batches,
+                        total_batches,
+                        processed_chunks,
+                        total_candidate_chunks,
+                        current_started_batches,
+                        current_running_batches,
+                    )
                 if log_callback:
                     await log_callback(
                         f"请求大模型抽取：批次 {batch_index + 1}/{total_batches}，本批 {len(batch)} 个分片"
@@ -171,16 +199,24 @@ class GraphExtractionService:
         for future in asyncio.as_completed(tasks):
             batch, payload = await future
             GraphExtractionService._merge_payload(chunk_map, payload)
-            processed_batches += 1
-            processed_chunks += len(batch)
+            async with progress_lock:
+                processed_batches += 1
+                processed_chunks += len(batch)
+                running_batches = max(0, running_batches - 1)
+                current_processed_batches = processed_batches
+                current_processed_chunks = processed_chunks
+                current_started_batches = started_batches
+                current_running_batches = running_batches
             if batch_result_callback:
                 await batch_result_callback(batch)
             if progress_callback:
                 await progress_callback(
-                    processed_batches,
+                    current_processed_batches,
                     total_batches,
-                    processed_chunks,
+                    current_processed_chunks,
                     total_candidate_chunks,
+                    current_started_batches,
+                    current_running_batches,
                 )
 
         logger.info(
