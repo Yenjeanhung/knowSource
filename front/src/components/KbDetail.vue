@@ -23,18 +23,27 @@ const stageTimers = ref({})
 
 const STAGE_ORDER = ['chunking', 'vectorizing', 'extraction']
 
-function ensureStageTimer(fileId, stageName, progress) {
-  const key = `${fileId}-${stageName}`
-  const cur = stageTimers.value[key]
-  if (!cur) {
-    stageTimers.value = { ...stageTimers.value, [key]: { started: null, ended: null } }
-  }
-  const timer = stageTimers.value[key]
-  if (progress > 0 && !timer.started) {
-    stageTimers.value = { ...stageTimers.value, [key]: { ...timer, started: nowTick.value } }
-  }
-  if (progress >= 100 && timer.started && !timer.ended && !timer.frozen) {
-    stageTimers.value = { ...stageTimers.value, [key]: { ...timer, started: timer.started, ended: nowTick.value } }
+function syncStageTimers(fileId, detail) {
+  if (!detail?.stages) return
+  for (const stageName of STAGE_ORDER) {
+    const stage = detail.stages[stageName]
+    if (!stage) continue
+    const key = `${fileId}-${stageName}`
+    const cur = stageTimers.value[key]
+    if (!cur) {
+      stageTimers.value = { ...stageTimers.value, [key]: { started: null, ended: null } }
+    }
+    const timer = stageTimers.value[key]
+    // 启动计时器的条件：进度大于0，或者标签不是"等待开始"
+    const shouldStart = stage.progress > 0 || (stage.label && !stage.label.includes('等待开始'))
+    if (shouldStart && !timer.started) {
+      const serverStart = stage.started_at ? new Date(stage.started_at).getTime() : null
+      stageTimers.value = { ...stageTimers.value, [key]: { ...timer, started: serverStart || Date.now() } }
+    }
+    if (stage.progress >= 100 && timer.started && !timer.ended && !timer.frozen) {
+      const serverEnd = stage.finished_at ? new Date(stage.finished_at).getTime() : null
+      stageTimers.value = { ...stageTimers.value, [key]: { ...timer, started: timer.started, ended: serverEnd || Date.now() } }
+    }
   }
 }
 const showProcessDialog = ref(false)
@@ -175,7 +184,6 @@ async function confirmProcess(extractGraph) {
         stages: {
           total: { progress: 0, label: '准备开始处理' },
           chunking: { progress: 0, current: 0, total: 0, label: '等待开始' },
-          vectorizing: { progress: 0, current: 0, total: 0, label: '等待开始' },
           extraction: {
             progress: 0,
             processed_batches: 0,
@@ -217,7 +225,6 @@ async function batchProcess(extractGraph = true) {
           stages: {
             total: { progress: 0, label: '准备开始处理' },
             chunking: { progress: 0, current: 0, total: 0, label: '等待开始' },
-            vectorizing: { progress: 0, current: 0, total: 0, label: '等待开始' },
             extraction: {
               progress: 0,
               processed_batches: 0,
@@ -248,6 +255,7 @@ async function syncFileStatus(fileId, timer = null) {
       target.progress = data.progress || 0
       target.message = data.message || target.message
       target.detail = data.detail || target.detail
+      if (target.detail) syncStageTimers(fileId, target.detail)
       target.logs = Array.isArray(data.logs) ? data.logs : target.logs
       target.status = data.status || target.status
     }
@@ -305,10 +313,11 @@ function getUploadProgress(id) {
 }
 
 function getElapsedLabel(file) {
+  const _t = nowTick.value
   const detail = file.detail
   if (!detail?.started_at) return '--'
   const started = new Date(detail.started_at).getTime()
-  const ended = detail.finished_at ? new Date(detail.finished_at).getTime() : nowTick.value
+  const ended = detail.finished_at ? new Date(detail.finished_at).getTime() : _t
   const totalSeconds = Math.max(0, Math.floor((ended - started) / 1000))
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
@@ -341,23 +350,24 @@ function fmtDuration(ms) {
 }
 
 function getStageTimeStr(file, stageName) {
+  const _t = nowTick.value
   const stage = file.detail?.stages?.[stageName]
   if (!stage || stage.progress <= 0) return ''
   if (stageSkipped(file, stageName)) return ''
 
+  // 优先使用后端时间戳，刷新页面也不会重置计时
   if (stage.started_at) {
     const started = new Date(stage.started_at).getTime()
-    const ended = stage.finished_at ? new Date(stage.finished_at).getTime() : nowTick.value
-    return fmtDuration(Math.max(0, ended - started))
+    const ended = stage.finished_at ? new Date(stage.finished_at).getTime() : _t
+    if (ended > started) return fmtDuration(ended - started)
   }
 
-  ensureStageTimer(file.id, stageName, stage.progress)
+  // 兜底：无后端时间戳时使用本地计时器
   const timer = stageTimers.value[`${file.id}-${stageName}`]
-  if (!timer?.started) return ''
-
-  const end = timer.ended || nowTick.value
-  const elapsed = Math.max(0, end - timer.started)
-  return fmtDuration(elapsed)
+  const startTime = timer?.started
+  if (!startTime) return ''
+  const end = timer?.ended || _t
+  return fmtDuration(Math.max(0, end - startTime))
 }
 
 function stageIcon(file, stageName) {
@@ -519,11 +529,11 @@ function stageIconClass(file, stageName) {
                 </div>
               </div>
 
-              <!-- Chunking stage -->
+              <!-- Chunking + Vectorizing combined stage -->
               <div class="stage-row" v-if="file.detail?.stages?.chunking">
                 <div class="stage-head">
                   <span class="stage-icon" :class="stageIconClass(file, 'chunking')">{{ stageIcon(file, 'chunking') }}</span>
-                  <span class="stage-label">分片进度</span>
+                  <span class="stage-label">分片与向量化</span>
                   <span class="stage-pct">{{ getStageProgress(file, 'chunking') }}%</span>
                   <span class="stage-time" v-if="getStageTimeStr(file, 'chunking')">{{ getStageTimeStr(file, 'chunking') }}</span>
                 </div>
@@ -534,34 +544,10 @@ function stageIconClass(file, stageName) {
                 </div>
                 <div class="stage-detail">
                   <template v-if="getStageProgress(file, 'chunking') >= 100">
-                    共 {{ file.detail.stages.chunking.total || 0 }} 个分片
+                    共 {{ file.detail.stages.chunking.total || 0 }} 个分片，已全部写入向量库
                   </template>
                   <template v-else-if="getStageProgress(file, 'chunking') > 0">
-                    已完成 {{ file.detail.stages.chunking.current || 0 }}/{{ file.detail.stages.chunking.total || 0 }} 个分片
-                  </template>
-                  <template v-else>等待中...</template>
-                </div>
-              </div>
-
-              <!-- Vector stage -->
-              <div class="stage-row" v-if="file.detail?.stages?.vectorizing">
-                <div class="stage-head">
-                  <span class="stage-icon" :class="stageIconClass(file, 'vectorizing')">{{ stageIcon(file, 'vectorizing') }}</span>
-                  <span class="stage-label">写入向量库</span>
-                  <span class="stage-pct">{{ getStageProgress(file, 'vectorizing') }}%</span>
-                  <span class="stage-time" v-if="getStageTimeStr(file, 'vectorizing')">{{ getStageTimeStr(file, 'vectorizing') }}</span>
-                </div>
-                <div class="stage-bar-wrap">
-                  <div class="stage-bar-track stage-track--sub">
-                    <div class="stage-bar-fill stage-fill--vector" :style="{ width: `${getStageProgress(file, 'vectorizing')}%` }"></div>
-                  </div>
-                </div>
-                <div class="stage-detail">
-                  <template v-if="getStageProgress(file, 'vectorizing') >= 100">
-                    已写入 {{ file.detail.stages.vectorizing.total || 0 }} 个分片
-                  </template>
-                  <template v-else-if="getStageProgress(file, 'vectorizing') > 0">
-                    已写入 {{ file.detail.stages.vectorizing.current || 0 }}/{{ file.detail.stages.vectorizing.total || 0 }} 个分片
+                    分片 {{ file.detail.stages.chunking.current || 0 }}/{{ file.detail.stages.chunking.total || 0 }} · 已写入向量 {{ file.detail.stages.vectorizing?.current || file.detail.stages.chunking.current || 0 }}/{{ file.detail.stages.vectorizing?.total || file.detail.stages.chunking.total || 0 }}
                   </template>
                   <template v-else>等待中...</template>
                 </div>
@@ -571,7 +557,7 @@ function stageIconClass(file, stageName) {
               <div class="stage-row" v-if="file.detail?.stages?.extraction">
                 <div class="stage-head">
                   <span class="stage-icon" :class="stageIconClass(file, 'extraction')">{{ stageIcon(file, 'extraction') }}</span>
-                  <span class="stage-label">实体/关系抽取+保存图数据库</span>
+                  <span class="stage-label">实体/关系抽取与生成图谱</span>
                   <span class="stage-pct">{{ getStageProgress(file, 'extraction') }}%</span>
                   <span class="stage-time" v-if="getStageTimeStr(file, 'extraction')">{{ getStageTimeStr(file, 'extraction') }}</span>
                 </div>
@@ -911,10 +897,6 @@ h1 { font-size: 18px; font-weight: 700; }
 
 .stage-fill--extract {
   background: linear-gradient(90deg, #58a6ff, #a371f7);
-}
-
-.stage-fill--vector {
-  background: linear-gradient(90deg, #14b8a6, #22c55e);
 }
 
 /* ---- stage detail ---- */
