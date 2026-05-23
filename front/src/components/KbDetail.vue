@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { getKb, deleteFile as apiDeleteFile, uploadChunk, processFile, reprocessFile, getFileStatus } from '../api'
+import { getKb, deleteFile as apiDeleteFile, uploadChunk, processFile, reprocessFile, getFileStatus, cancelProcessing } from '../api'
 
 const CHUNK_SIZE = 512 * 1024
 const uuid = () => ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(
@@ -50,6 +50,14 @@ const showProcessDialog = ref(false)
 const pendingFileId = ref('')
 const pendingFileName = ref('')
 const pendingProcessMode = ref('process')
+
+// Confirm dialog state
+const showConfirmDialog = ref(false)
+const confirmDialogTitle = ref('')
+const confirmDialogMessage = ref('')
+const confirmDialogConfirmText = ref('确定')
+const confirmDialogCancelText = ref('取消')
+let confirmDialogCallback = null
 
 const uploadedCount = computed(() => files.value.filter(item => item.status === 'uploaded').length)
 
@@ -145,6 +153,27 @@ async function uploadFile(fileId, file) {
     if (target) target.status = 'error'
   }
   delete uploading.value[fileId]
+}
+
+function showConfirm(title, message, confirmText = '确定', cancelText = '取消') {
+  return new Promise(resolve => {
+    confirmDialogTitle.value = title
+    confirmDialogMessage.value = message
+    confirmDialogConfirmText.value = confirmText
+    confirmDialogCancelText.value = cancelText
+    confirmDialogCallback = resolve
+    showConfirmDialog.value = true
+  })
+}
+
+function confirmDialogOk() {
+  showConfirmDialog.value = false
+  confirmDialogCallback(true)
+}
+
+function confirmDialogCancel() {
+  showConfirmDialog.value = false
+  confirmDialogCallback(false)
 }
 
 function openProcessDialog(file) {
@@ -306,6 +335,37 @@ async function deleteFile(fileId) {
     await apiDeleteFile(fileId)
   } catch {}
   files.value = files.value.filter(item => item.id !== fileId)
+}
+
+async function handleCancel(fileId) {
+  const confirmed = await showConfirm(
+    '取消处理',
+    '确定要取消处理吗？这将删除已入库的分片、向量和图谱数据，但保留原文件。',
+    '取消处理',
+    '继续处理'
+  )
+  if (!confirmed) {
+    return
+  }
+  if (pollTimers[fileId]) {
+    clearInterval(pollTimers[fileId])
+    delete pollTimers[fileId]
+  }
+  delete processing.value[fileId]
+  // clean up stage timers for this file
+  const cleaned = { ...stageTimers.value }
+  for (const key of Object.keys(cleaned)) {
+    if (key.startsWith(`${fileId}-`)) delete cleaned[key]
+  }
+  stageTimers.value = cleaned
+  try {
+    await cancelProcessing(fileId)
+    // 刷新文件状态
+    kb.value = await getKb(props.kbId)
+    files.value = (kb.value.files || []).map(normalizeFile)
+  } catch (e) {
+    console.error('Cancel processing failed:', e)
+  }
 }
 
 function getUploadProgress(id) {
@@ -520,6 +580,13 @@ function stageIconClass(file, stageName) {
           </template>
           <template v-else-if="file.status === 'processing'">
             <span class="tag tag-proc">处理中</span>
+            <button class="cancel-btn" @click="handleCancel(file.id)" title="取消处理">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <line x1="9" y1="9" x2="15" y2="15" />
+                <line x1="15" y1="9" x2="9" y2="15" />
+              </svg>
+            </button>
           </template>
           <template v-else>
             <button class="proc-btn proc-btn-retry" @click="openReprocessDialog(file)">
@@ -534,10 +601,13 @@ function stageIconClass(file, stageName) {
             </span>
           </template>
 
-          <button class="rm-btn" @click="deleteFile(file.id)">
+          <button class="rm-btn" @click="deleteFile(file.id)" title="删除文件">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
+              <path d="M3 6h18" />
+              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+              <line x1="10" y1="11" x2="10" y2="17" />
+              <line x1="14" y1="11" x2="14" y2="17" />
             </svg>
           </button>
         </div>
@@ -713,6 +783,24 @@ function stageIconClass(file, stageName) {
               </div>
               <span class="mode-arrow">&rarr;</span>
             </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Confirm Dialog -->
+      <div class="dialog-overlay" v-if="showConfirmDialog" @click.self="confirmDialogCancel">
+        <div class="dialog-card confirm-card">
+          <div class="confirm-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+          </div>
+          <div class="confirm-title">{{ confirmDialogTitle }}</div>
+          <div class="confirm-message">{{ confirmDialogMessage }}</div>
+          <div class="confirm-actions">
+            <button class="confirm-btn cancel" @click="confirmDialogCancel">{{ confirmDialogCancelText }}</button>
+            <button class="confirm-btn ok" @click="confirmDialogOk">{{ confirmDialogConfirmText }}</button>
           </div>
         </div>
       </div>
@@ -929,8 +1017,23 @@ h1 { font-size: 18px; font-weight: 700; }
 .proc-btn-retry { border-color: #64748b; color: #64748b; }
 .proc-btn-retry:hover { background: #64748b; color: #fff; }
 
-.rm-btn { background: none; border: none; cursor: pointer; color: var(--c-secondary); padding: 3px; border-radius: 4px; display: flex; transition: all 150ms; flex-shrink: 0; }
-.rm-btn:hover { color: var(--c-danger); }
+.rm-btn, .cancel-btn { 
+  background: none; 
+  border: 1px solid #ef4444; 
+  cursor: pointer; 
+  color: #ef4444; 
+  padding: 4px 8px; 
+  border-radius: 4px; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  transition: all 150ms; 
+  flex-shrink: 0; 
+}
+.rm-btn:hover, .cancel-btn:hover { 
+  background: #ef4444; 
+  color: #fff; 
+}
 
 .process-panel {
   padding: 0 14px 14px 44px;
@@ -1362,5 +1465,74 @@ h1 { font-size: 18px; font-weight: 700; }
     flex-wrap: wrap;
     gap: 4px;
   }
+}
+
+/* Confirm Dialog */
+.confirm-card {
+  width: 360px;
+  max-width: 90vw;
+  padding: 24px;
+  text-align: center;
+}
+
+.confirm-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(239,68,68,0.1);
+  color: #ef4444;
+}
+
+.confirm-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--c-fg);
+  margin-bottom: 8px;
+}
+
+.confirm-message {
+  font-size: 13px;
+  color: var(--c-secondary);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.confirm-btn {
+  padding: 10px 24px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms;
+  border: none;
+}
+
+.confirm-btn.cancel {
+  background: var(--c-muted);
+  color: var(--c-secondary);
+}
+
+.confirm-btn.cancel:hover {
+  background: var(--c-border);
+  color: var(--c-fg);
+}
+
+.confirm-btn.ok {
+  background: #ef4444;
+  color: #fff;
+}
+
+.confirm-btn.ok:hover {
+  background: #dc2626;
 }
 </style>

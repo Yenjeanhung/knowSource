@@ -85,12 +85,20 @@ onMounted(loadKbs)
           <div class="kb-icon-box">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
             <span class="kb-badge" v-if="kb.file_count">{{ kb.file_count }}</span>
+            <span class="processing-indicator" v-if="kb.processing_files">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                <circle class="spin" cx="12" cy="12" r="10"/>
+              </svg>
+            </span>
           </div>
           <div class="kb-body">
-            <div class="kb-title">{{ kb.name }}</div>
+            <div class="kb-title">{{ kb.name }} <span v-if="kb.processing_files" class="processing-text">处理中...</span></div>
             <div class="kb-meta">
               <span v-for="t in kb.file_types?.slice(0, 4)" :key="t" class="tag" :style="{ color: typeColor(t), background: typeColor(t) + '15' }">{{ t }}</span>
               <span class="kb-desc" v-if="kb.description">{{ kb.description }}</span>
+            </div>
+            <div class="processing-bar" v-if="kb.processing_files">
+              <div class="processing-fill" :style="{ width: `${kb.overall_progress}%` }"></div>
             </div>
           </div>
           <div class="kb-hover-actions">
@@ -175,6 +183,45 @@ onMounted(loadKbs)
 .kb-desc { font-size: 12px; color: var(--c-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
 .kb-hover-actions { display: flex; gap: 2px; opacity: 0; transition: opacity 150ms; flex-shrink: 0; }
 .kb-row:hover .kb-hover-actions { opacity: 1; }
+
+.processing-indicator {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  color: #4ade80;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+  stroke: currentColor;
+  stroke-width: 3;
+  fill: none;
+}
+
+.processing-text {
+  font-size: 12px;
+  font-weight: 400;
+  color: #4ade80;
+}
+
+.processing-bar {
+  height: 4px;
+  background: var(--c-muted);
+  border-radius: 2px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+
+.processing-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4ade80, #22c55e);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
 
 .tag { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
 

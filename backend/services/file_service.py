@@ -934,6 +934,32 @@ class FileService:
         ]
 
     @staticmethod
+    async def cancel_processing(db: AsyncSession, file_id: str) -> bool:
+        """取消文件处理，删除已入库的数据（分片、向量、图谱），保持原文件不变"""
+        file = await db.get(File, file_id)
+        if not file:
+            logger.warning("Cancel processing skipped: file_id=%s not found", file_id)
+            return False
+        
+        if file.status != "processing":
+            logger.warning("Cancel processing skipped: file_id=%s not processing, status=%s", file_id, file.status)
+            return False
+        
+        # 删除已入库的数据（分片、向量、图谱），但保留原文件
+        await FileService._delete_index_artifacts(db, file, remove_source_file=False)
+        
+        # 重置文件状态为 uploaded（等待处理）
+        file.status = "uploaded"
+        file.progress = 0
+        file.message = "处理已取消"
+        FileService._write_detail(file, FileService._empty_detail())
+        FileService._write_logs(file, [])
+        
+        await db.commit()
+        logger.info("Processing cancelled: file_id=%s kb_id=%s", file.id, file.kb_id)
+        return True
+
+    @staticmethod
     async def delete(db: AsyncSession, file_id: str) -> bool:
         file = await db.get(File, file_id)
         if not file:

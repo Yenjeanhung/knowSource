@@ -37,6 +37,9 @@ class KBService:
                 "file_types": sorted(
                     set(Path(file.name).suffix.lower().lstrip(".") for file in kb.files if file.name)
                 ),
+                # 添加处理状态：如果有文件正在处理，返回处理中的文件数和总进度
+                "processing_files": sum(1 for file in kb.files if file.status == "processing"),
+                "overall_progress": max((file.progress for file in kb.files), default=0) if kb.files else 0,
             }
             for kb in kbs
         ]

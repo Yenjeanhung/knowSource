@@ -36,6 +36,12 @@ export async function deleteFile(fileId) {
   await fetch(`${API}/api/files/${fileId}`, { method: 'DELETE' })
 }
 
+export async function cancelProcessing(fileId) {
+  const res = await fetch(`${API}/api/files/${fileId}/cancel`, { method: 'POST' })
+  if (!res.ok) throw new Error('Cancel failed')
+  return res.json()
+}
+
 export async function processFile(fileId, { extractGraph = true } = {}) {
   const res = await fetch(`${API}/api/files/${fileId}/process?extract_graph=${extractGraph}`, { method: 'POST' })
   if (!res.ok) throw new Error('Process failed')

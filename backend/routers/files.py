@@ -65,6 +65,14 @@ async def list_files(db: AsyncSession = Depends(get_db)):
     return await FileService.list_all(db)
 
 
+@router.post("/files/{file_id}/cancel")
+async def cancel_processing(file_id: str, db: AsyncSession = Depends(get_db)):
+    cancelled = await FileService.cancel_processing(db, file_id)
+    if not cancelled:
+        raise HTTPException(400, "File not processing or not found")
+    return {"status": "cancelled"}
+
+
 @router.delete("/files/{file_id}")
 async def delete_file(file_id: str, db: AsyncSession = Depends(get_db)):
     deleted = await FileService.delete(db, file_id)
