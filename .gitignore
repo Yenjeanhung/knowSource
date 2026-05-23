@@ -65,7 +65,7 @@ lightrag/evaluation/results/
 
 # Miscellaneous
 .DS_Store
-TODO.md
+#TODO.md
 ignore_this.txt
 *.ignore.*
 
