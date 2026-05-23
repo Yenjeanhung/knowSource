@@ -40,6 +40,18 @@ async def process_file(
     return {"status": "processing"}
 
 
+@router.post("/files/{file_id}/reprocess")
+async def reprocess_file(
+    file_id: str,
+    extract_graph: bool = True,
+    db: AsyncSession = Depends(get_db),
+):
+    ok = await FileService.restart_processing(file_id, db, extract_graph=extract_graph)
+    if not ok:
+        raise HTTPException(400, "File not ready for reprocessing")
+    return {"status": "processing"}
+
+
 @router.get("/files/{file_id}/status")
 async def file_status(file_id: str, db: AsyncSession = Depends(get_db)):
     result = await FileService.get_status(file_id, db)

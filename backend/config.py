@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # 向量存储
     VECTOR_STORE_PROVIDER: Literal["chroma", "milvus"]
     CHROMA_PERSIST_DIR: str
+    VECTOR_WRITE_BATCH_SIZE: int = 1
     # Milvus（VECTOR_STORE_PROVIDER=milvus 时使用）
     MILVUS_HOST: str
     MILVUS_PORT: int

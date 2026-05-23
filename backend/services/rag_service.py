@@ -67,7 +67,7 @@ class RAGService:
             chunks_result.append({
                 "file_id": doc.metadata.get("file_id", ""),
                 "file_name": doc.metadata.get("file_name", ""),
-                "text": doc.page_content[:500],
+                "text": doc.page_content,
                 "score": round(1 - float(score), 4),
                 "index": idx + 1,
                 "start_offset": doc.metadata.get("start_offset"),
@@ -116,7 +116,7 @@ class RAGService:
             chunks_result.append({
                 "file_id": doc.metadata.get("file_id", ""),
                 "file_name": doc.metadata.get("file_name", ""),
-                "text": doc.page_content[:500],
+                "text": doc.page_content,
                 "score": round(1 - float(score), 4),
                 "start_offset": doc.metadata.get("start_offset"),
                 "end_offset": doc.metadata.get("end_offset"),

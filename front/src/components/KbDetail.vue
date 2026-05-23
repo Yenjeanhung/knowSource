@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { getKb, deleteFile as apiDeleteFile, uploadChunk, processFile, getFileStatus } from '../api'
+import { getKb, deleteFile as apiDeleteFile, uploadChunk, processFile, reprocessFile, getFileStatus } from '../api'
 
 const CHUNK_SIZE = 512 * 1024
 const uuid = () => ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(
@@ -21,7 +21,7 @@ const pollTimers = {}
 let clockTimer = null
 const stageTimers = ref({})
 
-const STAGE_ORDER = ['chunking', 'extraction', 'graph']
+const STAGE_ORDER = ['chunking', 'vectorizing', 'extraction', 'graph']
 
 function ensureStageTimer(fileId, stageName, progress) {
   const key = `${fileId}-${stageName}`
@@ -40,6 +40,7 @@ function ensureStageTimer(fileId, stageName, progress) {
 const showProcessDialog = ref(false)
 const pendingFileId = ref('')
 const pendingFileName = ref('')
+const pendingProcessMode = ref('process')
 
 const uploadedCount = computed(() => files.value.filter(item => item.status === 'uploaded').length)
 
@@ -47,6 +48,9 @@ onMounted(async () => {
   try {
     kb.value = await getKb(props.kbId)
     files.value = (kb.value.files || []).map(normalizeFile)
+    for (const file of files.value) {
+      if (file.status === 'processing') startPolling(file.id)
+    }
   } catch {}
   clockTimer = setInterval(() => {
     nowTick.value = Date.now()
@@ -137,6 +141,14 @@ async function uploadFile(fileId, file) {
 function openProcessDialog(file) {
   pendingFileId.value = file.id
   pendingFileName.value = file.name
+  pendingProcessMode.value = 'process'
+  showProcessDialog.value = true
+}
+
+function openReprocessDialog(file) {
+  pendingFileId.value = file.id
+  pendingFileName.value = file.name
+  pendingProcessMode.value = 'reprocess'
   showProcessDialog.value = true
 }
 
@@ -145,11 +157,14 @@ async function confirmProcess(extractGraph) {
   const fileId = pendingFileId.value
   if (!fileId) return
   try {
-    await processFile(fileId, { extractGraph })
+    const runner = pendingProcessMode.value === 'reprocess' ? reprocessFile : processFile
+    await runner(fileId, { extractGraph })
     const target = files.value.find(item => item.id === fileId)
     if (target) {
       target.status = 'processing'
-      target.message = extractGraph ? '准备开始处理（含图谱抽取）' : '准备开始处理（跳过图谱）'
+      target.message = pendingProcessMode.value === 'reprocess'
+        ? (extractGraph ? '准备重新处理（含图谱抽取）' : '准备重新处理（跳过图谱）')
+        : (extractGraph ? '准备开始处理（含图谱抽取）' : '准备开始处理（跳过图谱）')
       target.logs = []
       target.detail = {
         started_at: new Date().toISOString(),
@@ -160,6 +175,7 @@ async function confirmProcess(extractGraph) {
         stages: {
           total: { progress: 0, label: '准备开始处理' },
           chunking: { progress: 0, current: 0, total: 0, label: '等待开始' },
+          vectorizing: { progress: 0, current: 0, total: 0, label: '等待开始' },
           extraction: {
             progress: 0,
             processed_batches: 0,
@@ -179,6 +195,7 @@ async function confirmProcess(extractGraph) {
   } catch {}
   pendingFileId.value = ''
   pendingFileName.value = ''
+  pendingProcessMode.value = 'process'
 }
 
 async function batchProcess(extractGraph = true) {
@@ -199,6 +216,7 @@ async function batchProcess(extractGraph = true) {
           stages: {
             total: { progress: 0, label: '准备开始处理' },
             chunking: { progress: 0, current: 0, total: 0, label: '等待开始' },
+            vectorizing: { progress: 0, current: 0, total: 0, label: '等待开始' },
             extraction: {
               progress: 0,
               processed_batches: 0,
@@ -219,33 +237,47 @@ async function batchProcess(extractGraph = true) {
   }
 }
 
-function startPolling(fileId) {
-  processing.value[fileId] = processing.value[fileId] || 0
-  const timer = setInterval(async () => {
-    try {
-      const data = await getFileStatus(fileId)
-      processing.value[fileId] = data.progress || 0
-      const target = files.value.find(item => item.id === fileId)
-      if (target) {
-        target.progress = data.progress || 0
-        target.message = data.message || target.message
-        target.detail = data.detail || target.detail
-        target.logs = Array.isArray(data.logs) ? data.logs : target.logs
-      }
-      if (data.status === 'indexed' || data.status === 'failed') {
-        clearInterval(timer)
+async function syncFileStatus(fileId, timer = null) {
+  try {
+    const data = await getFileStatus(fileId)
+    processing.value[fileId] = data.progress || 0
+    const target = files.value.find(item => item.id === fileId)
+    if (target) {
+      target.progress = data.progress || 0
+      target.message = data.message || target.message
+      target.detail = data.detail || target.detail
+      target.logs = Array.isArray(data.logs) ? data.logs : target.logs
+      target.status = data.status || target.status
+    }
+    if (data.status === 'indexed' || data.status === 'failed') {
+      if (timer) clearInterval(timer)
+      if (pollTimers[fileId]) {
+        clearInterval(pollTimers[fileId])
         delete pollTimers[fileId]
-        if (target) {
-          target.status = data.status
-          if (data.status === 'indexed') delete processing.value[fileId]
-        }
       }
-    } catch {
-      clearInterval(timer)
+      if (target && data.status === 'indexed') delete processing.value[fileId]
+      return true
+    }
+  } catch {
+    if (timer) clearInterval(timer)
+    if (pollTimers[fileId]) {
+      clearInterval(pollTimers[fileId])
       delete pollTimers[fileId]
     }
-  }, 1000)
+    return true
+  }
+  return false
+}
+
+function startPolling(fileId) {
+  if (pollTimers[fileId]) clearInterval(pollTimers[fileId])
+  processing.value[fileId] = processing.value[fileId] || 0
+  const timer = setInterval(async () => {
+    const done = await syncFileStatus(fileId, timer)
+    if (done) return
+  }, 300)
   pollTimers[fileId] = timer
+  syncFileStatus(fileId, timer)
 }
 
 async function deleteFile(fileId) {
@@ -426,6 +458,13 @@ function stageIconClass(file, stageName) {
             <span class="tag tag-proc">处理中</span>
           </template>
           <template v-else>
+            <button class="proc-btn proc-btn-retry" @click="openReprocessDialog(file)">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                <polyline points="21 3 21 9 15 9" />
+              </svg>
+              重新处理
+            </button>
             <span class="tag" :class="file.status === 'indexed' ? 'tag-ok' : 'tag-err'">
               {{ file.status === 'indexed' ? '已完成' : '失败' }}
             </span>
@@ -491,6 +530,30 @@ function stageIconClass(file, stageName) {
                   </template>
                   <template v-else-if="getStageProgress(file, 'chunking') > 0">
                     已完成 {{ file.detail.stages.chunking.current || 0 }}/{{ file.detail.stages.chunking.total || 0 }} 个分片
+                  </template>
+                  <template v-else>等待中...</template>
+                </div>
+              </div>
+
+              <!-- Vector stage -->
+              <div class="stage-row" v-if="file.detail?.stages?.vectorizing">
+                <div class="stage-head">
+                  <span class="stage-icon" :class="stageIconClass(file, 'vectorizing')">{{ stageIcon(file, 'vectorizing') }}</span>
+                  <span class="stage-label">写入向量库</span>
+                  <span class="stage-pct">{{ getStageProgress(file, 'vectorizing') }}%</span>
+                  <span class="stage-time" v-if="getStageTimeStr(file, 'vectorizing')">{{ getStageTimeStr(file, 'vectorizing') }}</span>
+                </div>
+                <div class="stage-bar-wrap">
+                  <div class="stage-bar-track stage-track--sub">
+                    <div class="stage-bar-fill stage-fill--vector" :style="{ width: `${getStageProgress(file, 'vectorizing')}%` }"></div>
+                  </div>
+                </div>
+                <div class="stage-detail">
+                  <template v-if="getStageProgress(file, 'vectorizing') >= 100">
+                    已写入 {{ file.detail.stages.vectorizing.total || 0 }} 个分片
+                  </template>
+                  <template v-else-if="getStageProgress(file, 'vectorizing') > 0">
+                    已写入 {{ file.detail.stages.vectorizing.current || 0 }}/{{ file.detail.stages.vectorizing.total || 0 }} 个分片
                   </template>
                   <template v-else>等待中...</template>
                 </div>
@@ -610,7 +673,7 @@ function stageIconClass(file, stageName) {
                 </svg>
               </div>
               <div class="mode-text">
-                <strong>分片 + 抽取图谱</strong>
+                <strong>{{ pendingProcessMode === 'reprocess' ? '重新分片 + 抽取图谱' : '分片 + 抽取图谱' }}</strong>
                 <span>切分文本、生成向量，并调用 LLM 抽取实体与关系写入图数据库</span>
               </div>
               <span class="mode-arrow">&rarr;</span>
@@ -625,7 +688,7 @@ function stageIconClass(file, stageName) {
                 </svg>
               </div>
               <div class="mode-text">
-                <strong>仅分片（更快）</strong>
+                <strong>{{ pendingProcessMode === 'reprocess' ? '重新分片（更快）' : '仅分片（更快）' }}</strong>
                 <span>只切分文本并生成向量，不调用 LLM，速度更快</span>
               </div>
               <span class="mode-arrow">&rarr;</span>
@@ -686,6 +749,8 @@ h1 { font-size: 18px; font-weight: 700; }
 
 .proc-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; font-size: 11px; font-weight: 600; border-radius: 6px; border: 1px solid #6366f1; background: transparent; color: #6366f1; cursor: pointer; transition: all 150ms; }
 .proc-btn:hover { background: #6366f1; color: #fff; }
+.proc-btn-retry { border-color: #64748b; color: #64748b; }
+.proc-btn-retry:hover { background: #64748b; color: #fff; }
 
 .rm-btn { background: none; border: none; cursor: pointer; color: var(--c-secondary); padding: 3px; border-radius: 4px; display: flex; transition: all 150ms; flex-shrink: 0; }
 .rm-btn:hover { color: var(--c-danger); }
@@ -857,6 +922,10 @@ h1 { font-size: 18px; font-weight: 700; }
 
 .stage-fill--extract {
   background: linear-gradient(90deg, #58a6ff, #a371f7);
+}
+
+.stage-fill--vector {
+  background: linear-gradient(90deg, #14b8a6, #22c55e);
 }
 
 .stage-fill--graph {

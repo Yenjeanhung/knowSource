@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from core.chunker import split_text
+from core.chunker import iter_text_chunks
 from database import async_session
 from models import Chunk, File, KnowledgeBase
 from providers.embedding import create_embeddings
@@ -39,6 +39,53 @@ def _utc_now_iso() -> str:
 
 class FileService:
     @staticmethod
+    async def _delete_index_artifacts(
+        db: AsyncSession,
+        file: File,
+        *,
+        remove_source_file: bool,
+    ):
+        embeddings = create_embeddings()
+        chunks = (await db.execute(select(Chunk).where(Chunk.file_id == file.id))).scalars().all()
+        vector_provider_name = get_vector_store_provider_name()
+        graph_provider_name = get_graph_store_provider_name()
+        logger.info(
+            "Deleting file index artifacts: file_id=%s kb_id=%s chunk_rows=%s vector_provider=%s graph_provider=%s remove_source_file=%s",
+            file.id,
+            file.kb_id,
+            len(chunks),
+            vector_provider_name,
+            graph_provider_name,
+            remove_source_file,
+        )
+
+        if chunks:
+            try:
+                vectorstore = create_vector_store(file.kb_id, embeddings)
+                ids_to_delete = [chunk.embedding_id for chunk in chunks if chunk.embedding_id]
+                if ids_to_delete:
+                    await asyncio.to_thread(vectorstore.delete, ids=ids_to_delete)
+            except Exception:
+                logger.exception("Vector delete failed: file_id=%s kb_id=%s", file.id, file.kb_id)
+
+            for chunk in chunks:
+                await db.delete(chunk)
+            await db.flush()
+
+        try:
+            await asyncio.to_thread(delete_document_graph, file.id)
+        except Exception:
+            logger.exception("Graph delete failed: file_id=%s kb_id=%s", file.id, file.kb_id)
+
+        if remove_source_file and file.path:
+            file_path = Path(file.path)
+            if file_path.exists():
+                file_path.unlink()
+
+        for chunk_path in CHUNK_DIR.glob(f"{file.id}_*"):
+            chunk_path.unlink()
+
+    @staticmethod
     def _empty_detail() -> dict:
         return {
             "started_at": None,
@@ -53,6 +100,7 @@ class FileService:
             "stages": {
                 "total": {"progress": 0, "label": "等待开始"},
                 "chunking": {"progress": 0, "current": 0, "total": 0, "label": "等待开始"},
+                "vectorizing": {"progress": 0, "current": 0, "total": 0, "label": "等待开始"},
                 "extraction": {
                     "progress": 0,
                     "processed_batches": 0,
@@ -113,6 +161,7 @@ class FileService:
         message: str | None = None,
         stage: str | None = None,
         chunk_progress: dict | None = None,
+        vector_progress: dict | None = None,
         extraction_progress: dict | None = None,
         graph_progress: dict | None = None,
         summary: dict | None = None,
@@ -134,6 +183,8 @@ class FileService:
             detail["stage"] = stage
         if chunk_progress:
             detail["stages"]["chunking"].update(chunk_progress)
+        if vector_progress:
+            detail["stages"]["vectorizing"].update(vector_progress)
         if extraction_progress:
             detail["stages"]["extraction"].update(extraction_progress)
         if graph_progress:
@@ -269,6 +320,45 @@ class FileService:
         return True
 
     @staticmethod
+    async def restart_processing(file_id: str, db: AsyncSession, extract_graph: bool = True) -> bool:
+        file = await db.get(File, file_id)
+        if not file or not file.path:
+            logger.warning(
+                "Restart processing skipped: file_id=%s status=%s path=%s",
+                file_id,
+                getattr(file, "status", None),
+                getattr(file, "path", None),
+            )
+            return False
+
+        if file.status == "processing":
+            logger.warning("Restart processing skipped: file_id=%s already processing", file_id)
+            return False
+
+        await FileService._delete_index_artifacts(db, file, remove_source_file=False)
+
+        detail = FileService._empty_detail()
+        detail["started_at"] = _utc_now_iso()
+        detail["stage"] = "preparing"
+        FileService._write_detail(file, detail)
+        FileService._write_logs(file, [])
+        await FileService._commit_runtime_state(
+            db,
+            file,
+            status="processing",
+            progress=0,
+            message="准备重新处理",
+            stage="preparing",
+            log_message="已清理旧分片、向量和图谱，开始重新处理",
+        )
+        logger.info(
+            "Restart processing: file_id=%s kb_id=%s file_name=%s extract_graph=%s",
+            file.id, file.kb_id, file.name, extract_graph,
+        )
+        asyncio.create_task(FileService._process_file_bg(file_id, extract_graph=extract_graph))
+        return True
+
+    @staticmethod
     async def get_status(file_id: str, db: AsyncSession) -> dict | None:
         file = await db.get(File, file_id)
         if not file:
@@ -314,6 +404,7 @@ class FileService:
                     progress=5,
                     message="正在解析文档",
                     stage="parsing",
+                    vector_progress={"label": "等待写入", "progress": 0, "current": 0, "total": 0},
                     chunk_progress={"label": "等待分片", "progress": 0, "current": 0, "total": 0},
                     extraction_progress={"label": "等待抽取", "progress": 0},
                     graph_progress={"label": "等待写图", "progress": 0},
@@ -341,69 +432,146 @@ class FileService:
                 )
 
                 chunk_started = perf_counter()
-                text_chunks = split_text(result.content, result.metadata)
-                if not text_chunks:
+                embeddings = create_embeddings()
+                vectorstore = create_vector_store(file.kb_id, embeddings)
+                vector_batch_size = max(1, settings.VECTOR_WRITE_BATCH_SIZE)
+                content_length = max(len(result.content or ""), 1)
+
+                await FileService._commit_runtime_state(
+                    db,
+                    file,
+                    progress=18,
+                    message="Streaming chunks into vector store",
+                    stage="chunking",
+                    vector_progress={
+                        "progress": 0,
+                        "current": 0,
+                        "total": 0,
+                        "label": "Waiting for first vector batch",
+                    },
+                    log_message=f"Streaming chunk/vector pipeline started, provider={vector_provider_name}",
+                )
+
+                from langchain_core.documents import Document
+
+                text_chunks: list[dict] = []
+                graph_chunks: list[ChunkGraphData] = []
+                chunk_ids: list[str] = []
+                pending_chunk_rows: list[dict] = []
+                pending_docs: list[Document] = []
+                pending_ids: list[str] = []
+                generated_chunks = 0
+                written_docs = 0
+                last_generated_offset = 0
+                last_written_offset = 0
+                vector_started = perf_counter()
+
+                async def flush_vector_batch(*, final: bool) -> None:
+                    nonlocal written_docs, last_written_offset
+                    if not pending_docs:
+                        return
+
+                    batch_docs = list(pending_docs)
+                    batch_ids = list(pending_ids)
+                    batch_rows = list(pending_chunk_rows)
+                    await asyncio.to_thread(vectorstore.add_documents, batch_docs, ids=batch_ids)
+
+                    for chunk_row, chunk_id in zip(batch_rows, batch_ids):
+                        text_chunks.append(chunk_row)
+                        chunk_ids.append(chunk_id)
+                        graph_chunks.append(
+                            ChunkGraphData(
+                                chunk_id=chunk_id,
+                                chunk_index=chunk_row["index"],
+                                content=chunk_row["content"],
+                            )
+                        )
+                        db.add(
+                            Chunk(
+                                id=chunk_id,
+                                file_id=file_id,
+                                content=chunk_row["content"],
+                                chunk_index=chunk_row["index"],
+                                embedding_id=chunk_id,
+                            )
+                        )
+
+                    written_docs += len(batch_docs)
+                    last_written_offset = batch_rows[-1]["end_offset"]
+                    chunk_ratio = min(1.0, last_generated_offset / content_length)
+                    vector_ratio = min(1.0, last_written_offset / content_length)
+                    display_total = generated_chunks
+
+                    await FileService._commit_runtime_state(
+                        db,
+                        file,
+                        progress=20 + int(vector_ratio * 35),
+                        message=f"Streaming chunks: generated {generated_chunks}, vectorized {written_docs}",
+                        stage="vectorizing",
+                        chunk_progress={
+                            "progress": 100 if final else max(1, int(chunk_ratio * 99)),
+                            "current": generated_chunks,
+                            "total": display_total,
+                            "label": (
+                                f"Chunked {generated_chunks}/{generated_chunks}"
+                                if final else f"Chunking in progress, generated {generated_chunks}"
+                            ),
+                        },
+                        vector_progress={
+                            "progress": 100 if final else max(1, int(vector_ratio * 99)),
+                            "current": written_docs,
+                            "total": display_total,
+                            "label": (
+                                f"Vectorized {written_docs}/{written_docs}"
+                                if final else f"Vectorizing in progress, written {written_docs}"
+                            ),
+                        },
+                        summary={"chunk_count": generated_chunks},
+                    )
+                    pending_docs.clear()
+                    pending_ids.clear()
+                    pending_chunk_rows.clear()
+
+                for chunk in iter_text_chunks(result.content, result.metadata):
+                    generated_chunks += 1
+                    last_generated_offset = chunk["end_offset"]
+                    chunk_id = f"{file_id}_{chunk['index']}"
+                    pending_chunk_rows.append(chunk)
+                    pending_ids.append(chunk_id)
+                    pending_docs.append(
+                        Document(
+                            page_content=chunk["content"],
+                            metadata={
+                                "file_id": file_id,
+                                "file_name": file.name,
+                                "chunk_index": chunk["index"],
+                                "start_offset": chunk["start_offset"],
+                                "end_offset": chunk["end_offset"],
+                                "page_number": chunk.get("page_number"),
+                                "file_ext": file_path.suffix.lower(),
+                            },
+                        )
+                    )
+                    if len(pending_docs) >= vector_batch_size:
+                        await flush_vector_batch(final=False)
+
+                if generated_chunks == 0:
                     await FileService._commit_runtime_state(
                         db,
                         file,
                         status="failed",
                         progress=file.progress,
-                        message="文档内容为空，暂不支持扫描图片类 PDF 的文本抽取。",
+                        message="Document content is empty after parsing",
                         stage="failed",
-                        log_message="文档分片失败：解析结果为空",
+                        log_message="Chunking failed: parsed content is empty",
                         log_level="error",
                         finished=True,
                     )
                     logger.warning("Document content empty after parsing: file_id=%s", file_id)
                     return
 
-                from langchain_core.documents import Document
-
-                docs = [
-                    Document(
-                        page_content=chunk["content"],
-                        metadata={
-                            "file_id": file_id,
-                            "file_name": file.name,
-                            "chunk_index": chunk["index"],
-                            "start_offset": chunk["start_offset"],
-                            "end_offset": chunk["end_offset"],
-                            "page_number": chunk.get("page_number"),
-                            "file_ext": file_path.suffix.lower(),
-                        },
-                    )
-                    for chunk in text_chunks
-                ]
+                await flush_vector_batch(final=True)
                 chunk_ms = (perf_counter() - chunk_started) * 1000
-                await FileService._commit_runtime_state(
-                    db,
-                    file,
-                    progress=25,
-                    message=f"分片完成，共 {len(docs)} 个分片",
-                    stage="chunked",
-                    chunk_progress={
-                        "progress": 100,
-                        "current": len(docs),
-                        "total": len(docs),
-                        "label": f"已切分 {len(docs)} / {len(docs)}",
-                    },
-                    summary={"chunk_count": len(docs)},
-                    log_message=f"文本切分完成：{len(docs)} 个分片，用时 {chunk_ms / 1000:.1f}s",
-                )
-
-                embeddings = create_embeddings()
-                vectorstore = create_vector_store(file.kb_id, embeddings)
-                chunk_ids = [f"{file_id}_{index}" for index in range(len(docs))]
-                await FileService._commit_runtime_state(
-                    db,
-                    file,
-                    progress=35,
-                    message=f"正在生成向量，共 {len(docs)} 个分片",
-                    stage="vectorizing",
-                    log_message=f"开始写入向量库，provider={vector_provider_name}",
-                )
-                vector_started = perf_counter()
-                await asyncio.to_thread(vectorstore.add_documents, docs, ids=chunk_ids)
                 vector_ms = (perf_counter() - vector_started) * 1000
                 logger.info(
                     "Vector write completed: file_id=%s kb_id=%s provider=%s count=%s duration_ms=%.0f",
@@ -417,19 +585,26 @@ class FileService:
                     db,
                     file,
                     progress=55,
-                    message="向量写入完成，准备抽取实体与关系",
+                    message="Vector write complete, preparing graph extraction",
                     stage="extract_prepare",
-                    log_message=f"向量写入完成，用时 {vector_ms / 1000:.1f}s",
+                    vector_progress={
+                        "progress": 100,
+                        "current": len(chunk_ids),
+                        "total": len(chunk_ids),
+                        "label": f"Vectorized {len(chunk_ids)}/{len(chunk_ids)}",
+                    },
+                    chunk_progress={
+                        "progress": 100,
+                        "current": len(text_chunks),
+                        "total": len(text_chunks),
+                        "label": f"Chunked {len(text_chunks)}/{len(text_chunks)}",
+                    },
+                    summary={"chunk_count": len(text_chunks)},
+                    log_message=(
+                        f"Streaming chunk/vector pipeline finished: {len(text_chunks)} chunks, "
+                        f"chunking {chunk_ms / 1000:.1f}s, vector write {vector_ms / 1000:.1f}s"
+                    ),
                 )
-
-                graph_chunks = [
-                    ChunkGraphData(
-                        chunk_id=chunk_ids[index],
-                        chunk_index=text_chunks[index]["index"],
-                        content=text_chunks[index]["content"],
-                    )
-                    for index in range(len(text_chunks))
-                ]
 
                 entity_count = 0
                 relation_count = 0
@@ -619,18 +794,6 @@ class FileService:
                         log_message="已跳过实体与关系抽取（extract_graph=false）",
                     )
 
-                sql_started = perf_counter()
-                for index, chunk in enumerate(text_chunks):
-                    db.add(
-                        Chunk(
-                            id=chunk_ids[index],
-                            file_id=file_id,
-                            content=chunk["content"],
-                            chunk_index=chunk["index"],
-                            embedding_id=chunk_ids[index],
-                        )
-                    )
-
                 total_ms = (perf_counter() - pipeline_started) * 1000
                 await FileService._commit_runtime_state(
                     db,
@@ -638,28 +801,27 @@ class FileService:
                     status="indexed",
                     progress=100,
                     message=(
-                        f"处理完成：{len(text_chunks)} 个分片，"
-                        f"{entity_count} 个实体，{relation_count} 个关系"
+                        f"Processing complete: {len(text_chunks)} chunks, "
+                        f"{entity_count} entities, {relation_count} relations"
                     ),
                     stage="completed",
-                    graph_progress={"progress": 100, "label": "分片记录已保存"},
+                    graph_progress={"progress": 100, "label": "Chunk records saved"},
                     summary={
                         "chunk_count": len(text_chunks),
                         "entity_count": entity_count,
                         "relation_count": relation_count,
                     },
                     log_message=(
-                        f"处理完成，总耗时 {total_ms / 1000:.1f}s，"
-                        f"分片 {len(text_chunks)}，实体 {entity_count}，关系 {relation_count}"
+                        f"Processing complete in {total_ms / 1000:.1f}s: "
+                        f"chunks={len(text_chunks)}, entities={entity_count}, relations={relation_count}"
                     ),
                     finished=True,
                 )
                 logger.info(
-                    "Chunk row persistence completed: file_id=%s kb_id=%s count=%s duration_ms=%.0f",
+                    "Chunk row persistence completed incrementally: file_id=%s kb_id=%s count=%s",
                     file.id,
                     file.kb_id,
                     len(text_chunks),
-                    (perf_counter() - sql_started) * 1000,
                 )
                 logger.info(
                     "Processing pipeline finished: file_id=%s kb_id=%s status=%s progress=%s total_duration_ms=%.0f",
@@ -674,6 +836,7 @@ class FileService:
                 try:
                     file = await db.get(File, file_id)
                     if file:
+                        await FileService._delete_index_artifacts(db, file, remove_source_file=False)
                         await FileService._commit_runtime_state(
                             db,
                             file,
@@ -712,40 +875,7 @@ class FileService:
         if not file:
             logger.warning("Delete file skipped: file_id=%s not found", file_id)
             return False
-
-        embeddings = create_embeddings()
-        chunks = (await db.execute(select(Chunk).where(Chunk.file_id == file_id))).scalars().all()
-        vector_provider_name = get_vector_store_provider_name()
-        graph_provider_name = get_graph_store_provider_name()
-        logger.info(
-            "Deleting file assets: file_id=%s kb_id=%s chunk_rows=%s vector_provider=%s graph_provider=%s",
-            file.id,
-            file.kb_id,
-            len(chunks),
-            vector_provider_name,
-            graph_provider_name,
-        )
-
-        if chunks:
-            try:
-                vectorstore = create_vector_store(file.kb_id, embeddings)
-                ids_to_delete = [chunk.embedding_id for chunk in chunks if chunk.embedding_id]
-                await asyncio.to_thread(vectorstore.delete, ids=ids_to_delete)
-            except Exception:
-                logger.exception("Vector delete failed: file_id=%s kb_id=%s", file.id, file.kb_id)
-
-        try:
-            await asyncio.to_thread(delete_document_graph, file.id)
-        except Exception:
-            logger.exception("Graph delete failed: file_id=%s kb_id=%s", file.id, file.kb_id)
-
-        if file.path:
-            file_path = Path(file.path)
-            if file_path.exists():
-                file_path.unlink()
-
-        for chunk_path in CHUNK_DIR.glob(f"{file_id}_*"):
-            chunk_path.unlink()
+        await FileService._delete_index_artifacts(db, file, remove_source_file=True)
 
         await db.delete(file)
         await db.commit()

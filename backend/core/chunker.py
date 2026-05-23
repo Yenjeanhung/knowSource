@@ -1,12 +1,16 @@
-import re
+from __future__ import annotations
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+import re
+from collections.abc import Iterable, Iterator
 
 from config import settings
 
 
-def _find_page(page_map, start, end):
-    """根据字符偏移量反查 PDF 页码。"""
+_SENT_SEP = re.compile(r"(?<=[。！？；.!?;\n])")
+_FIXED_SEPARATORS = ("\n\n", "\n", "。", "！", "？", "；", ".", "!", "?", ";", " ")
+
+
+def _find_page(page_map, start: int, end: int):
     if not page_map:
         return None
     mid = (start + end) // 2
@@ -16,129 +20,154 @@ def _find_page(page_map, start, end):
     return None
 
 
-def _build_result(content: str, chunks: list[str], metadata: dict) -> list[dict]:
-    """为切分后的文本列表构建统一返回格式。"""
+def _chunk_record(
+    content: str,
+    chunk_text: str,
+    index: int,
+    offset: int,
+    metadata: dict,
+) -> tuple[dict, int]:
     page_map = (metadata or {}).get("page_map")
-    result = []
+    start_offset = content.find(chunk_text, offset)
+    if start_offset == -1:
+        start_offset = offset
+    end_offset = start_offset + len(chunk_text)
+    next_offset = start_offset + 1
+    return {
+        "index": index,
+        "content": chunk_text,
+        "start_offset": start_offset,
+        "end_offset": end_offset,
+        "page_number": _find_page(page_map, start_offset, end_offset),
+        "metadata": metadata or {},
+    }, next_offset
+
+
+def _records_from_texts(content: str, chunk_texts: Iterable[str], metadata: dict) -> Iterator[dict]:
     offset = 0
-    for i, chunk in enumerate(chunks):
-        start_offset = content.find(chunk, offset)
-        if start_offset == -1:
-            start_offset = offset
-        end_offset = start_offset + len(chunk)
-        offset = start_offset + 1
-
-        result.append({
-            "index": i,
-            "content": chunk,
-            "start_offset": start_offset,
-            "end_offset": end_offset,
-            "page_number": _find_page(page_map, start_offset, end_offset),
-            "metadata": metadata or {},
-        })
-    return result
+    for index, chunk_text in enumerate(chunk_texts):
+        if not chunk_text:
+            continue
+        record, offset = _chunk_record(content, chunk_text, index, offset, metadata)
+        yield record
 
 
-# ---- fixed: 固定大小递归切分 ----
+def _pick_fixed_end(content: str, start: int) -> int:
+    chunk_size = max(1, settings.CHUNK_SIZE)
+    max_end = min(start + chunk_size, len(content))
+    if max_end >= len(content):
+        return len(content)
 
-def _split_fixed(content: str, metadata: dict) -> list[dict]:
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=settings.CHUNK_SIZE,
-        chunk_overlap=settings.CHUNK_OVERLAP,
-        separators=["\n\n", "。", "！", "？", ".", " ", ""],
-    )
-    chunks = splitter.split_text(content)
-    return _build_result(content, chunks, metadata)
+    search_floor = start + max(1, min(chunk_size // 2, chunk_size - 1))
+    window = content[start:max_end]
+    floor_in_window = max(0, search_floor - start)
+
+    for separator in _FIXED_SEPARATORS:
+        idx = window.rfind(separator, floor_in_window)
+        if idx != -1:
+            return start + idx + len(separator)
+    return max_end
 
 
-# ---- sentence: 按句子切分 ----
+def _iter_fixed_texts(content: str) -> Iterator[str]:
+    if not content.strip():
+        return
 
-_SENT_SEP = re.compile(r'(?<=[。！？；\n])')
+    start = 0
+    overlap = max(0, settings.CHUNK_OVERLAP)
 
-def _split_sentence(content: str, metadata: dict) -> list[dict]:
-    """按句子边界切分，每 N 个字符合并一个 chunk。"""
+    while start < len(content):
+        end = _pick_fixed_end(content, start)
+        if end <= start:
+            end = min(start + max(1, settings.CHUNK_SIZE), len(content))
+
+        chunk_text = content[start:end]
+        if chunk_text.strip():
+            yield chunk_text
+
+        if end >= len(content):
+            break
+
+        next_start = max(0, end - overlap)
+        if next_start <= start:
+            next_start = end
+        start = next_start
+
+
+def _iter_sentence_texts(content: str) -> Iterator[str]:
     sentences = [s for s in _SENT_SEP.split(content) if s.strip()]
-    chunks = []
-    buf = []
-    buf_len = 0
+    if not sentences:
+        return
 
-    for s in sentences:
-        if buf_len + len(s) > settings.CHUNK_SIZE and buf:
-            chunks.append("".join(buf))
-            # 保留 overlap 部分
-            overlap_text = "".join(buf)[-settings.CHUNK_OVERLAP:]
+    buf: list[str] = []
+    buf_len = 0
+    for sentence in sentences:
+        if buf_len + len(sentence) > settings.CHUNK_SIZE and buf:
+            joined = "".join(buf)
+            yield joined
+            overlap_text = joined[-settings.CHUNK_OVERLAP:] if settings.CHUNK_OVERLAP > 0 else ""
             buf = [overlap_text] if overlap_text else []
             buf_len = len(buf[0]) if buf else 0
-        buf.append(s)
-        buf_len += len(s)
+        buf.append(sentence)
+        buf_len += len(sentence)
 
     if buf:
-        chunks.append("".join(buf))
-
-    return _build_result(content, chunks, metadata)
+        yield "".join(buf)
 
 
-# ---- semantic: 语义分块 ----
-
-def _split_semantic(content: str, metadata: dict) -> list[dict]:
-    """按段落和章节结构切分，尽量保持语义完整性。"""
-    # 先按双换行（段落）切
+def _iter_semantic_texts(content: str) -> Iterator[str]:
     paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
+    if not paragraphs:
+        return
 
-    chunks = []
-    buf = []
+    buf: list[str] = []
     buf_len = 0
 
-    for para in paragraphs:
-        # 单段超长则进一步按句子拆
-        if len(para) > settings.CHUNK_SIZE:
+    for paragraph in paragraphs:
+        if len(paragraph) > settings.CHUNK_SIZE:
             if buf:
-                chunks.append("\n\n".join(buf))
+                yield "\n\n".join(buf)
                 buf = []
                 buf_len = 0
-            sub_sentences = [s for s in _SENT_SEP.split(para) if s.strip()]
-            sub_buf = []
+
+            sub_buf: list[str] = []
             sub_len = 0
-            for s in sub_sentences:
-                if sub_len + len(s) > settings.CHUNK_SIZE and sub_buf:
-                    chunks.append("".join(sub_buf))
-                    sub_buf = [s]
-                    sub_len = len(s)
+            for sentence in [s for s in _SENT_SEP.split(paragraph) if s.strip()]:
+                if sub_len + len(sentence) > settings.CHUNK_SIZE and sub_buf:
+                    yield "".join(sub_buf)
+                    sub_buf = [sentence]
+                    sub_len = len(sentence)
                 else:
-                    sub_buf.append(s)
-                    sub_len += len(s)
+                    sub_buf.append(sentence)
+                    sub_len += len(sentence)
             if sub_buf:
-                chunks.append("".join(sub_buf))
+                yield "".join(sub_buf)
             continue
 
-        if buf_len + len(para) > settings.CHUNK_SIZE and buf:
-            chunks.append("\n\n".join(buf))
+        if buf_len + len(paragraph) > settings.CHUNK_SIZE and buf:
+            yield "\n\n".join(buf)
             buf = []
             buf_len = 0
 
-        buf.append(para)
-        buf_len += len(para)
+        buf.append(paragraph)
+        buf_len += len(paragraph)
 
     if buf:
-        chunks.append("\n\n".join(buf))
-
-    return _build_result(content, chunks, metadata)
+        yield "\n\n".join(buf)
 
 
-# ---- 入口 ----
-
-_STRATEGIES = {
-    "fixed": _split_fixed,
-    "sentence": _split_sentence,
-    "semantic": _split_semantic,
+_TEXT_STRATEGIES = {
+    "fixed": _iter_fixed_texts,
+    "sentence": _iter_sentence_texts,
+    "semantic": _iter_semantic_texts,
 }
 
 
-def split_text(content: str, metadata: dict = None) -> list[dict]:
-    """按配置的策略分块。
-
-    返回: [{"index", "content", "start_offset", "end_offset", "page_number", "metadata"}, ...]
-    """
+def iter_text_chunks(content: str, metadata: dict | None = None) -> Iterator[dict]:
     strategy = settings.CHUNK_STRATEGY
-    fn = _STRATEGIES.get(strategy, _split_fixed)
-    return fn(content, metadata or {})
+    text_iter = _TEXT_STRATEGIES.get(strategy, _iter_fixed_texts)
+    yield from _records_from_texts(content, text_iter(content), metadata or {})
+
+
+def split_text(content: str, metadata: dict | None = None) -> list[dict]:
+    return list(iter_text_chunks(content, metadata))

@@ -21,7 +21,23 @@ const emit = defineEmits(['close'])
 const loading = ref(false)
 const error = ref('')
 const textContent = ref('')
+const textMatch = ref(null)
+const debugInfo = ref({
+  startOffset: -1,
+  endOffset: -1,
+  matchFound: false,
+  matchStart: -1,
+  matchEnd: -1,
+  markOffsetTop: -1,
+  preScrollTop: 0,
+  bodyScrollTop: 0,
+  preScrollHeight: 0,
+  preClientHeight: 0,
+  bodyScrollHeight: 0,
+  bodyClientHeight: 0,
+})
 const highlightRef = ref(null)
+const markRef = ref(null)
 const previewBodyRef = ref(null)
 const canvasRef = ref(null)
 const textLayerRef = ref(null)
@@ -42,6 +58,154 @@ const normalizedExt = computed(() => {
 })
 
 const isPdf = computed(() => normalizedExt.value === '.pdf')
+
+function buildNormalizedMap(text) {
+  let normalized = ''
+  const indexMap = []
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]
+    if (/\s/.test(ch)) continue
+    normalized += ch
+    indexMap.push(i)
+  }
+  return { normalized, indexMap }
+}
+
+function toSafeNumber(value) {
+  const num = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(num) ? num : -1
+}
+
+function resolveTextMatchRange(fullText) {
+  const start = toSafeNumber(props.startOffset)
+  const end = toSafeNumber(props.endOffset)
+  const chunkText = props.chunkText || ''
+
+  if (start >= 0 && end > start && end <= fullText.length) {
+    return { start, end }
+  }
+
+  if (!chunkText) return null
+
+  const exactIndex = fullText.indexOf(chunkText)
+  if (exactIndex !== -1) {
+    return { start: exactIndex, end: exactIndex + chunkText.length }
+  }
+
+  const { normalized: haystack, indexMap } = buildNormalizedMap(fullText)
+  const { normalized: needle } = buildNormalizedMap(chunkText)
+  if (!needle) return null
+
+  let normalizedIndex = haystack.indexOf(needle)
+  if (normalizedIndex === -1 && needle.length > 24) {
+    normalizedIndex = haystack.indexOf(needle.slice(0, 24))
+  }
+  if (normalizedIndex === -1) return null
+
+  const origStart = indexMap[normalizedIndex]
+  const lastIndex = normalizedIndex + Math.min(needle.length, haystack.length - normalizedIndex) - 1
+  const origEnd = (indexMap[lastIndex] ?? origStart) + 1
+  return { start: origStart, end: origEnd }
+}
+
+function captureScrollDebug(previewBody, pre, mark = null) {
+  debugInfo.value = {
+    ...debugInfo.value,
+    markOffsetTop: mark ? mark.offsetTop : -1,
+    preScrollTop: pre?.scrollTop || 0,
+    bodyScrollTop: previewBody?.scrollTop || 0,
+    preScrollHeight: pre?.scrollHeight || 0,
+    preClientHeight: pre?.clientHeight || 0,
+    bodyScrollHeight: previewBody?.scrollHeight || 0,
+    bodyClientHeight: previewBody?.clientHeight || 0,
+  }
+}
+
+function scheduleTextScroll({ pre, previewBody, matchStart, mark = null }) {
+  const applyScroll = () => {
+    if (!pre) return
+    const ratio = textContent.value.length ? matchStart / textContent.value.length : 0
+    const preMax = Math.max(0, pre.scrollHeight - pre.clientHeight)
+    const bodyMax = Math.max(0, (previewBody?.scrollHeight || 0) - (previewBody?.clientHeight || 0))
+    const fallbackTop = Math.max(0, ratio * preMax)
+    const outerFallbackTop = Math.max(0, ratio * bodyMax)
+
+    pre.scrollTop = fallbackTop
+    if (previewBody) previewBody.scrollTop = outerFallbackTop
+
+    if (mark) {
+      const innerTargetTop = Math.max(0, mark.offsetTop - pre.clientHeight * 0.28)
+      pre.scrollTop = innerTargetTop
+      if (previewBody) {
+        const outerTargetTop = Math.max(0, pre.offsetTop + mark.offsetTop - previewBody.clientHeight * 0.3)
+        previewBody.scrollTop = outerTargetTop
+      }
+    }
+    captureScrollDebug(previewBody, pre, mark)
+  }
+
+  applyScroll()
+  requestAnimationFrame(applyScroll)
+  setTimeout(applyScroll, 30)
+  setTimeout(applyScroll, 120)
+}
+
+async function renderTextPreview(content) {
+  const pre = highlightRef.value
+  const previewBody = previewBodyRef.value
+  debugInfo.value = {
+    startOffset: toSafeNumber(props.startOffset),
+    endOffset: toSafeNumber(props.endOffset),
+    matchFound: false,
+    matchStart: -1,
+    matchEnd: -1,
+    markOffsetTop: -1,
+    preScrollTop: pre?.scrollTop || 0,
+    bodyScrollTop: previewBody?.scrollTop || 0,
+    preScrollHeight: pre?.scrollHeight || 0,
+    preClientHeight: pre?.clientHeight || 0,
+    bodyScrollHeight: previewBody?.scrollHeight || 0,
+    bodyClientHeight: previewBody?.clientHeight || 0,
+  }
+
+  const match = resolveTextMatchRange(content)
+  if (!match) {
+    textMatch.value = null
+    await nextTick()
+    const renderedPre = highlightRef.value
+    if (!renderedPre) return
+    scheduleTextScroll({
+      pre: renderedPre,
+      previewBody,
+      matchStart: Math.max(0, toSafeNumber(props.startOffset)),
+    })
+    return
+  }
+
+  debugInfo.value = {
+    ...debugInfo.value,
+    matchFound: true,
+    matchStart: match.start,
+    matchEnd: match.end,
+  }
+
+  textMatch.value = {
+    before: content.slice(0, match.start),
+    target: content.slice(match.start, match.end),
+    after: content.slice(match.end),
+  }
+  await nextTick()
+
+  const renderedPre = highlightRef.value
+  if (!renderedPre) return
+  const mark = markRef.value
+  scheduleTextScroll({
+    pre: renderedPre,
+    previewBody,
+    matchStart: match.start,
+    mark,
+  })
+}
 
 /* ---- PDF preview ---- */
 
@@ -240,36 +404,29 @@ async function loadText() {
   try {
     textContent.value = await fetchFileContent(props.fileId)
     await nextTick()
-    if (highlightRef.value) {
-      const pre = highlightRef.value
-      const targetScroll = Math.max(0, (props.startOffset || 0) * 0.6 - 100)
-      pre.scrollTop = targetScroll
-
-      if (props.chunkText) {
-        const escaped = props.chunkText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        const firstPart = escaped.substring(0, 80)
-        const highlightHtml = textContent.value.replace(
-          new RegExp(firstPart, 'g'),
-          m => `<mark>${m}</mark>`
-        )
-        if (highlightHtml !== textContent.value) {
-          pre.innerHTML = highlightHtml
-        }
-      }
-    }
+    await renderTextPreview(textContent.value)
   } catch (err) {
     error.value = `无法加载文件预览: ${err.message}`
   }
   loading.value = false
 }
 
-watch([() => props.visible, () => props.fileId], async ([visible, fileId]) => {
+watch([
+  () => props.visible,
+  () => props.fileId,
+  () => props.startOffset,
+  () => props.endOffset,
+  () => props.chunkText,
+  () => props.pageNumber,
+], async ([visible, fileId]) => {
   if (!visible || !fileId) {
     textContent.value = ''
+    textMatch.value = null
     return
   }
   if (isPdf.value) {
     textContent.value = ''
+    textMatch.value = null
     await loadPdf()
   } else {
     await loadText()
@@ -334,7 +491,19 @@ function onClose() {
         <template v-else-if="error">
           <div class="preview-error">{{ error }}</div>
         </template>
-        <pre v-else class="preview-text" ref="highlightRef">{{ textContent }}</pre>
+        <template v-else>
+          <div class="preview-debug">
+            <span>S {{ debugInfo.startOffset }}</span>
+            <span>E {{ debugInfo.endOffset }}</span>
+            <span>hit {{ debugInfo.matchFound ? 'Y' : 'N' }}</span>
+            <span>ms {{ debugInfo.matchStart }}</span>
+            <span>me {{ debugInfo.matchEnd }}</span>
+            <span>top {{ debugInfo.markOffsetTop }}</span>
+            <span>pre {{ debugInfo.preScrollTop }}</span>
+            <span>body {{ debugInfo.bodyScrollTop }}</span>
+          </div>
+          <pre class="preview-text" ref="highlightRef"><template v-if="textMatch"><span>{{ textMatch.before }}</span><mark ref="markRef" data-chunk-hit>{{ textMatch.target }}</mark><span>{{ textMatch.after }}</span></template><template v-else>{{ textContent }}</template></pre>
+        </template>
       </div>
     </div>
   </div>
@@ -469,6 +638,19 @@ function onClose() {
   height: 100%; color: var(--c-secondary); font-size: 14px;
 }
 .preview-error { color: var(--c-danger); }
+.preview-debug {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--c-secondary);
+  background: color-mix(in srgb, var(--c-panel) 92%, transparent);
+  border-bottom: 1px solid var(--c-border);
+}
 .preview-text {
   width: 100%; height: 100%;
   margin: 0; padding: 16px 20px;

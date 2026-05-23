@@ -42,6 +42,12 @@ export async function processFile(fileId, { extractGraph = true } = {}) {
   return res.json()
 }
 
+export async function reprocessFile(fileId, { extractGraph = true } = {}) {
+  const res = await fetch(`${API}/api/files/${fileId}/reprocess?extract_graph=${extractGraph}`, { method: 'POST' })
+  if (!res.ok) throw new Error('Reprocess failed')
+  return res.json()
+}
+
 export async function getFileStatus(fileId) {
   const res = await fetch(`${API}/api/files/${fileId}/status`)
   if (!res.ok) throw new Error('Status failed')
