@@ -355,7 +355,30 @@ function getStageTimeStr(file, stageName) {
   if (!stage || stage.progress <= 0) return ''
   if (stageSkipped(file, stageName)) return ''
 
-  // 优先使用后端时间戳，刷新页面也不会重置计时
+  // 对于 chunking 阶段，需要特殊处理：合并显示 chunking + vectorizing 的时间
+  if (stageName === 'chunking') {
+    const chunkingStage = file.detail?.stages?.chunking
+    const vectorizingStage = file.detail?.stages?.vectorizing
+    
+    // 使用 chunking 的开始时间
+    const startedAt = chunkingStage?.started_at
+    if (!startedAt) return ''
+    
+    const started = new Date(startedAt).getTime()
+    
+    // 如果 vectorizing 还在进行中，使用当前时间；否则使用 vectorizing 的结束时间
+    let ended
+    if (vectorizingStage?.progress < 100) {
+      ended = _t
+    } else {
+      ended = vectorizingStage?.finished_at ? new Date(vectorizingStage.finished_at).getTime() : _t
+    }
+    
+    if (ended > started) return fmtDuration(ended - started)
+    return ''
+  }
+
+  // 其他阶段使用正常逻辑
   if (stage.started_at) {
     const started = new Date(stage.started_at).getTime()
     const ended = stage.finished_at ? new Date(stage.finished_at).getTime() : _t

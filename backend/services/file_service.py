@@ -191,17 +191,22 @@ class FileService:
         new_visual_stage = _visual_stage_name(stage if stage is not None else old_stage)
         if detail.get("started_at") is None:
             detail["started_at"] = now_iso
-        if stage is not None and old_visual_stage != new_visual_stage and old_visual_stage:
-            previous = detail["stages"].get(old_visual_stage)
-            if previous and previous.get("started_at") and not previous.get("finished_at"):
-                previous["finished_at"] = now_iso
-                started = datetime.fromisoformat(previous["started_at"])
-                ended = datetime.fromisoformat(previous["finished_at"])
-                previous["elapsed_ms"] = max(0, int((ended - started).total_seconds() * 1000))
-        if new_visual_stage:
-            current = detail["stages"].get(new_visual_stage)
-            if current and current.get("started_at") is None:
-                current["started_at"] = now_iso
+        # 当阶段发生视觉变化时，管理各阶段的计时器
+        if stage is not None and old_visual_stage != new_visual_stage:
+            # 开始新的视觉阶段的计时
+            if new_visual_stage:
+                current = detail["stages"].get(new_visual_stage)
+                if current and not current.get("started_at"):
+                    current["started_at"] = now_iso
+            # 结束上一个视觉阶段的计时 - 但如果是从 chunking 切换到 vectorizing，不结束 chunking
+            # 因为这两个阶段在前端是合并显示的"分片与向量化"
+            if old_visual_stage and not (old_visual_stage == "chunking" and new_visual_stage == "vectorizing"):
+                previous = detail["stages"].get(old_visual_stage)
+                if previous and previous.get("started_at") and not previous.get("finished_at"):
+                    previous["finished_at"] = now_iso
+                    started = datetime.fromisoformat(previous["started_at"])
+                    ended = datetime.fromisoformat(previous["finished_at"])
+                    previous["elapsed_ms"] = max(0, int((ended - started).total_seconds() * 1000))
         if progress is not None:
             file.progress = max(0, min(100, progress))
             detail["stages"]["total"]["progress"] = file.progress
@@ -210,10 +215,17 @@ class FileService:
             detail["stages"]["total"]["label"] = message[:200]
         if stage is not None:
             detail["stage"] = stage
+        # 确保 chunking 阶段在有进度时总是有开始时间戳
         if chunk_progress:
             detail["stages"]["chunking"].update(chunk_progress)
+            if detail["stages"]["chunking"].get("progress", 0) > 0 and not detail["stages"]["chunking"].get("started_at"):
+                detail["stages"]["chunking"]["started_at"] = now_iso
+                logger.info(f"[TIMER-FIX] Set chunking started_at because progress > 0")
         if vector_progress:
             detail["stages"]["vectorizing"].update(vector_progress)
+            if detail["stages"]["vectorizing"].get("progress", 0) > 0 and not detail["stages"]["vectorizing"].get("started_at"):
+                detail["stages"]["vectorizing"]["started_at"] = now_iso
+                logger.info(f"[TIMER-FIX] Set vectorizing started_at because progress > 0")
         if extraction_progress:
             detail["stages"]["extraction"].update(extraction_progress)
         if graph_progress:
@@ -239,6 +251,14 @@ class FileService:
             started = datetime.fromisoformat(detail["started_at"])
             ended = datetime.fromisoformat(detail["finished_at"]) if detail.get("finished_at") else datetime.now(timezone.utc)
             detail["elapsed_ms"] = max(0, int((ended - started).total_seconds() * 1000))
+        
+        # 确保所有有进度的阶段都有 started_at
+        for stage_name in ["chunking", "vectorizing", "extraction", "graph"]:
+            stage = detail["stages"].get(stage_name)
+            if stage and stage.get("progress", 0) > 0 and not stage.get("started_at"):
+                stage["started_at"] = now_iso
+                logger.info(f"[TIMER-FIX] Auto-set {stage_name} started_at because progress={stage['progress']}")
+        
         FileService._write_detail(file, detail)
         if log_message:
             FileService._append_log(file, log_message, log_level)
