@@ -468,8 +468,8 @@ class FileService:
                     stage="parsing",
                     vector_progress={"label": "等待写入", "progress": 0, "current": 0, "total": 0},
                     chunk_progress={"label": "等待分片", "progress": 0, "current": 0, "total": 0},
-                    extraction_progress={"label": "等待抽取", "progress": 0},
-                    graph_progress={"label": "等待写图", "progress": 0},
+                    extraction_progress={"label": "等待抽取", "progress": 0} if extract_graph else {"label": "已跳过", "progress": 100},
+                    graph_progress={"label": "等待写图", "progress": 0} if extract_graph else {"label": "已跳过", "progress": 100},
                     log_message="开始解析文档",
                 )
 
@@ -564,10 +564,12 @@ class FileService:
                     vector_ratio = min(1.0, last_written_offset / content_length)
                     display_total = generated_chunks
 
+                    # 在仅分片模式下，向量写入阶段贡献更多进度（因为没有抽取阶段）
+                    vector_progress_weight = 70 if not extract_graph else 35
                     await FileService._commit_runtime_state(
                         db,
                         file,
-                        progress=20 + int(vector_ratio * 35),
+                        progress=20 + int(vector_ratio * vector_progress_weight),
                         message=f"Streaming chunks: generated {generated_chunks}, vectorized {written_docs}",
                         stage="vectorizing",
                         chunk_progress={
@@ -643,12 +645,14 @@ class FileService:
                     len(chunk_ids),
                     vector_ms,
                 )
+                # 在仅分片模式下，向量写入完成后跳到90%（因为没有抽取阶段）
+                final_progress = 90 if not extract_graph else 55
                 await FileService._commit_runtime_state(
                     db,
                     file,
-                    progress=55,
-                    message="Vector write complete, preparing graph extraction",
-                    stage="extract_prepare",
+                    progress=final_progress,
+                    message="Vector write complete, preparing graph extraction" if extract_graph else "Vector write complete, saving chunk records",
+                    stage="extract_prepare" if extract_graph else "saving",
                     vector_progress={
                         "progress": 100,
                         "current": len(chunk_ids),
@@ -846,10 +850,10 @@ class FileService:
                         ),
                     )
                 else:
+                    # 仅分片模式下，向量写入完成后已经设置了进度为90%，这里不再重复设置
                     await FileService._commit_runtime_state(
                         db,
                         file,
-                        progress=75,
                         message="已跳过图谱抽取，正在保存分片记录",
                         stage="saving",
                         extraction_progress={"progress": 100, "label": "已跳过图谱抽取"},
@@ -941,8 +945,9 @@ class FileService:
             logger.warning("Cancel processing skipped: file_id=%s not found", file_id)
             return False
         
-        if file.status != "processing":
-            logger.warning("Cancel processing skipped: file_id=%s not processing, status=%s", file_id, file.status)
+        # 允许在 processing 和 indexed 状态下取消处理（删除已入库的数据）
+        if file.status not in ("processing", "indexed"):
+            logger.warning("Cancel processing skipped: file_id=%s invalid status=%s", file_id, file.status)
             return False
         
         # 删除已入库的数据（分片、向量、图谱），但保留原文件

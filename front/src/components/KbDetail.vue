@@ -214,7 +214,7 @@ async function confirmProcess(extractGraph) {
           total: { progress: 0, label: '准备开始处理' },
           chunking: { progress: 0, current: 0, total: 0, label: '等待开始' },
           extraction: {
-            progress: 0,
+            progress: extractGraph ? 0 : 100,
             processed_batches: 0,
             total_batches: 0,
             started_batches: 0,
@@ -223,7 +223,7 @@ async function confirmProcess(extractGraph) {
             total_candidate_chunks: 0,
             entity_count: 0,
             relation_count: 0,
-            label: '等待开始',
+            label: extractGraph ? '等待开始' : '已跳过',
           },
         },
       }
@@ -255,7 +255,7 @@ async function batchProcess(extractGraph = true) {
             total: { progress: 0, label: '准备开始处理' },
             chunking: { progress: 0, current: 0, total: 0, label: '等待开始' },
             extraction: {
-              progress: 0,
+              progress: extractGraph ? 0 : 100,
               processed_batches: 0,
               total_batches: 0,
               started_batches: 0,
@@ -264,7 +264,7 @@ async function batchProcess(extractGraph = true) {
               total_candidate_chunks: 0,
               entity_count: 0,
               relation_count: 0,
-              label: '等待开始',
+              label: extractGraph ? '等待开始' : '已跳过',
             },
           },
         }
@@ -320,6 +320,15 @@ function startPolling(fileId) {
 }
 
 async function deleteFile(fileId) {
+  const confirmed = await showConfirm(
+    '删除文件',
+    '确定要删除该文件吗？这将删除所有相关的分片、向量和图谱数据，且无法恢复。',
+    '删除文件',
+    '取消'
+  )
+  if (!confirmed) {
+    return
+  }
   if (pollTimers[fileId]) {
     clearInterval(pollTimers[fileId])
     delete pollTimers[fileId]
@@ -472,19 +481,9 @@ function stageIcon(file, stageName) {
 }
 
 function stageSkipped(file, stageName) {
+  // 只根据后端设置的 label 判断是否跳过
   const label = file.detail?.stages?.[stageName]?.label || ''
-  if (label.includes('跳过')) return true
-  
-  // 如果是 extraction 阶段，且没有配置任何批次，说明不会进行抽取
-  if (stageName === 'extraction') {
-    const extraction = file.detail?.stages?.extraction
-    // 如果没有配置批次，且进度为0，说明不会进行抽取（仅分片模式）
-    if (extraction && extraction.progress === 0 && extraction.total_batches === 0) {
-      return true
-    }
-  }
-  
-  return false
+  return label.includes('跳过')
 }
 
 function stageIconClass(file, stageName) {
@@ -615,28 +614,28 @@ function stageIconClass(file, stageName) {
         <div class="process-panel" v-if="file.status === 'processing' || file.status === 'indexed'">
           <div class="terminal">
             <div class="terminal-bar">
-              <span class="terminal-title">
-                {{ file.status === 'indexed' ? '处理完成' : '处理中...' }}
-                &mdash; {{ file.name }}
+            <span class="terminal-title">
+              {{ file.status === 'indexed' ? '处理完成' : '处理中...' }}
+              &mdash; {{ file.name }}
+            </span>
+            <span class="terminal-meta">
+              <span class="terminal-pill" v-if="!stageSkipped(file, 'extraction')">{{ file.progress || 0 }}%</span>
+              <span class="terminal-time-display" v-if="file.status === 'processing'">处理时间 {{ getElapsedLabel(file) }}</span>
+              <span class="terminal-time-display done" v-else-if="file.status === 'indexed'">总耗时 {{ getElapsedLabel(file) }}</span>
+              <span v-if="file.detail?.summary" class="terminal-pill">
+                分片 {{ file.detail.summary.chunk_count || 0 }}
               </span>
-              <span class="terminal-meta">
-                <span class="terminal-pill">{{ file.progress || 0 }}%</span>
-                <span class="terminal-time-display" v-if="file.status === 'processing'">处理时间 {{ getElapsedLabel(file) }}</span>
-                <span class="terminal-time-display done" v-else-if="file.status === 'indexed'">总耗时 {{ getElapsedLabel(file) }}</span>
-                <span v-if="file.detail?.summary" class="terminal-pill">
-                  分片 {{ file.detail.summary.chunk_count || 0 }}
-                </span>
-                <span v-if="file.detail?.summary?.entity_count" class="terminal-pill">
-                  实体 {{ file.detail.summary.entity_count }}
-                </span>
-                <span v-if="file.detail?.summary?.relation_count" class="terminal-pill">
-                  关系 {{ file.detail.summary.relation_count }}
-                </span>
+              <span v-if="file.detail?.summary?.entity_count" class="terminal-pill">
+                实体 {{ file.detail.summary.entity_count }}
               </span>
-            </div>
+              <span v-if="file.detail?.summary?.relation_count" class="terminal-pill">
+                关系 {{ file.detail.summary.relation_count }}
+              </span>
+            </span>
+          </div>
             <div class="terminal-body stages-body">
-              <!-- Overall progress -->
-              <div class="stage-row stage-overall">
+              <!-- Overall progress - only show when extraction will run -->
+              <div class="stage-row stage-overall" v-if="!stageSkipped(file, 'extraction')">
                 <div class="stage-bar-wrap">
                   <div class="stage-bar-track stage-track--main">
                     <div class="stage-bar-fill stage-fill--main" :style="{ width: `${file.progress || 0}%` }"></div>
