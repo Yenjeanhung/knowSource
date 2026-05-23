@@ -976,3 +976,34 @@ class FileService:
         await db.commit()
         logger.info("File delete completed: file_id=%s kb_id=%s", file.id, file.kb_id)
         return True
+
+    @staticmethod
+    async def cleanup_zombie_tasks(db: AsyncSession):
+        """清理僵尸任务：后端重启后，状态仍为 processing 的文件实际上没有在处理"""
+        result = await db.execute(select(File).where(File.status == "processing"))
+        zombie_files = result.scalars().all()
+        
+        if not zombie_files:
+            logger.info("No zombie processing tasks found")
+            return
+        
+        logger.info("Found %d zombie processing tasks, cleaning up...", len(zombie_files))
+        
+        for file in zombie_files:
+            try:
+                # 删除可能不完整的入库数据
+                await FileService._delete_index_artifacts(db, file, remove_source_file=False)
+                
+                # 重置文件状态为 uploaded（等待处理）
+                file.status = "uploaded"
+                file.progress = 0
+                file.message = "服务已重启，请重新处理"
+                FileService._write_detail(file, FileService._empty_detail())
+                FileService._write_logs(file, [])
+                
+                logger.info("Cleaned up zombie task: file_id=%s file_name=%s", file.id, file.name)
+            except Exception as exc:
+                logger.exception("Failed to cleanup zombie task: file_id=%s error=%s", file.id, exc)
+        
+        await db.commit()
+        logger.info("Zombie tasks cleanup completed")

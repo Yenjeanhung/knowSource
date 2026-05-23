@@ -39,6 +39,13 @@ async def lifespan(app: FastAPI):
 
     ensure_graph_schema()
 
+    logger.info("Cleaning up zombie processing tasks...")
+    from services.file_service import FileService
+    from database import get_db
+
+    async for db in get_db():
+        await FileService.cleanup_zombie_tasks(db)
+
     logger.info("KnowSource started.")
     yield
     logger.info("KnowSource stopped.")
