@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, inject, onMounted, ref } from 'vue'
 import {
   fetchKbs,
   fetchVectorRecords,
@@ -13,6 +13,7 @@ const searchText = ref('')
 const onlyUnsynced = ref(false)
 const records = ref([])
 const provider = ref('')
+const vectorProvider = inject('vectorProvider', ref(''))
 const total = ref(0)
 const sourceTotal = ref(0)
 const recordsLoading = ref(false)
@@ -227,11 +228,10 @@ onMounted(async () => {
   <div class="vectors-page">
     <div class="vectors-toolbar">
       <div>
-        <div class="toolbar-title">向量数据</div>
+        <div class="toolbar-title">向量数据 <span class="provider-chip vector" v-if="vectorProvider" :title="`向量库: ${vectorProvider}`">{{ vectorProvider }}</span></div>
         <div class="toolbar-subtitle">查看分片后的索引记录、同步状态，以及当前向量库的命中数据。</div>
       </div>
       <div class="toolbar-meta">
-        <span class="meta-chip">Provider: {{ provider || '--' }}</span>
         <span class="meta-chip">当前页: {{ records.length }}</span>
         <span class="meta-chip">总记录: {{ total }}</span>
       </div>
@@ -480,6 +480,16 @@ onMounted(async () => {
   font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.02em;
+}
+
+.provider-chip {
+  display: inline-block; vertical-align: middle;
+  font-size: 11px; font-weight: 600; padding: 1px 7px; margin-left: 6px;
+  border-radius: 4px;
+  background: rgba(206, 147, 216, 0.18); color: #ce93d8;
+}
+.provider-chip.vector {
+  background: rgba(129, 199, 132, 0.18); color: #81c784;
 }
 
 .toolbar-subtitle {

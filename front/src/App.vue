@@ -1,12 +1,15 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, provide, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { fetchConfig } from './api'
 
 const router = useRouter()
 const isSidebarCollapsed = ref(false)
 const SIDEBAR_STORAGE_KEY = 'knowsource.sidebar.collapsed'
 const THEME_STORAGE_KEY = 'knowsource.theme'
 const theme = ref('dark')
+const vectorProvider = ref('')
+const graphProvider = ref('')
 
 const menuItems = computed(() => [
   { to: '/files', label: '文件', exact: false, hint: '文件管理' },
@@ -48,6 +51,14 @@ onMounted(() => {
     // 默认使用深色模式
     applyTheme('dark')
   }
+
+  provide('vectorProvider', vectorProvider)
+  provide('graphProvider', graphProvider)
+
+  fetchConfig().then(cfg => {
+    vectorProvider.value = cfg.vector_provider || ''
+    graphProvider.value = cfg.graph_provider || ''
+  }).catch(() => {})
 })
 </script>
 

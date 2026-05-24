@@ -21,7 +21,13 @@ router = APIRouter()
 
 @router.get("/config")
 async def get_config():
-    return {"crawl_max_pages": settings.CRAWL_MAX_PAGES}
+    from providers.graph_store import get_graph_store_provider_name
+    from providers.vector_store import get_vector_store_provider_name
+    return {
+        "crawl_max_pages": settings.CRAWL_MAX_PAGES,
+        "vector_provider": get_vector_store_provider_name(),
+        "graph_provider": get_graph_store_provider_name(),
+    }
 
 
 @router.get("/file-directories")

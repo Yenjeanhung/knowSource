@@ -1,6 +1,8 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 import { fetchGraphRelationTypes, fetchGraphView, fetchKbs, getKb } from '../api'
+
+const graphProvider = inject('graphProvider', ref(''))
 
 const ENTITY_COLORS = [
   '#5b7fbc', '#7a9e7e', '#b8a45c', '#c08b7a', '#7b8db0',
@@ -601,7 +603,7 @@ onUnmounted(() => stopSimulation())
   <div class="graph-page">
     <div class="graph-toolbar">
       <div>
-        <div class="toolbar-title">图谱</div>
+        <div class="toolbar-title">图谱 <span class="provider-chip" v-if="graphProvider" :title="`图库类型: ${graphProvider}`">{{ graphProvider }}</span></div>
         <div class="toolbar-subtitle">实体关系图谱 &mdash; 滚轮缩放，拖拽画布/节点，点击节点查看详情</div>
       </div>
       <div class="toolbar-right">
@@ -933,6 +935,11 @@ onUnmounted(() => stopSimulation())
   gap: 16px; flex-wrap: wrap;
 }
 .toolbar-title { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+.provider-chip {
+  display: inline-block; vertical-align: middle;
+  font-size: 11px; font-weight: 600; padding: 1px 7px; margin-left: 6px;
+  border-radius: 4px; background: rgba(206, 147, 216, 0.18); color: #ce93d8;
+}
 .toolbar-subtitle { margin-top: 4px; color: var(--c-secondary); font-size: 13px; }
 .toolbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .toolbar-meta { display: flex; flex-wrap: wrap; gap: 8px; }
