@@ -111,7 +111,7 @@ async function saveEdit() {
 
 function onKbCreated(kbId) { showCreateModal.value = false; router.push('/kb/' + kbId) }
 
-const typeColor = (t) => ({ pdf:'#ef4444', docx:'#3b82f6', txt:'#6b7280', md:'#8b5cf6', csv:'#10b981', json:'#f59e0b', html:'#f97316' }[t] || '#6b7280')
+const typeColor = (t) => ({ pdf:'#f59e0b', docx:'#3b82f6', txt:'#6b7280', md:'#8b5cf6', csv:'#10b981', json:'#f97316', html:'#ec4899' }[t] || '#6b7280')
 
 onMounted(loadKbs)
 </script>
@@ -146,16 +146,21 @@ onMounted(loadKbs)
       <div class="kb-list" v-if="filteredKbs.length">
         <div class="kb-row" v-for="kb in filteredKbs" :key="kb.id" @click="router.push('/kb/' + kb.id)">
           <div class="kb-icon-box">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
-            <span class="kb-badge" v-if="kb.file_count">{{ kb.file_count }}</span>
-            <span class="processing-indicator" v-if="kb.processing_files">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                <circle class="spin" cx="12" cy="12" r="10"/>
-              </svg>
-            </span>
-          </div>
-          <div class="kb-body">
-            <div class="kb-title">{{ kb.name }} <span v-if="kb.processing_files" class="processing-text">处理中...</span></div>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+              <span class="kb-badge" v-if="kb.file_count">{{ kb.file_count }}</span>
+              <span class="processing-indicator" v-if="kb.processing_files">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                  <circle class="spin" cx="12" cy="12" r="10"/>
+                </svg>
+              </span>
+              <span class="failed-indicator" v-if="kb.failed_files">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2L2 20h20L12 2zm0 15l-.5-6h1l-.5 6zm0-8l-.5-3h1l-.5 3z"/>
+                </svg>
+              </span>
+            </div>
+            <div class="kb-body">
+              <div class="kb-title">{{ kb.name }} <span v-if="kb.processing_files" class="processing-text">处理中...</span><span v-if="kb.failed_files" class="failed-text">失败 {{ kb.failed_files }}</span></div>
             <div class="kb-meta">
               <span v-for="t in kb.file_types?.slice(0, 4)" :key="t" class="tag" :style="{ color: typeColor(t), background: typeColor(t) + '15' }">{{ t }}</span>
               <span class="kb-desc" v-if="kb.description">{{ kb.description }}</span>
@@ -188,14 +193,34 @@ onMounted(loadKbs)
       <div class="kb-cards" v-if="filteredKbs.length">
         <div class="kb-card" v-for="kb in filteredKbs" :key="kb.id" @click="router.push('/kb/' + kb.id)">
           <div class="card-top-row">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+            <div class="card-icon-box">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+              <span class="card-badge" v-if="kb.file_count">{{ kb.file_count }}</span>
+              <span class="card-processing-indicator" v-if="kb.processing_files">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                  <circle class="spin" cx="12" cy="12" r="10"/>
+                </svg>
+              </span>
+              <span class="card-failed-indicator" v-if="kb.failed_files">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2L2 20h20L12 2zm0 15l-.5-6h1l-.5 6zm0-8l-.5-3h1l-.5 3z"/>
+                </svg>
+              </span>
+            </div>
             <div class="card-actions">
               <button class="icon-btn" @click="openEdit(kb, $event)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
               <button class="rm-btn" @click="removeKb(kb.id, $event)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
             </div>
           </div>
-          <div class="card-name">{{ kb.name }}</div>
+          <div class="card-name">
+            {{ kb.name }}
+            <span v-if="kb.processing_files" class="card-processing-text">处理中...</span>
+            <span v-if="kb.failed_files" class="card-failed-text">失败 {{ kb.failed_files }}</span>
+          </div>
           <div class="card-desc" v-if="kb.description">{{ kb.description }}</div>
+          <div class="card-progress-bar" v-if="kb.processing_files">
+            <div class="card-progress-fill" :style="{ width: `${kb.overall_progress}%` }"></div>
+          </div>
           <div class="card-foot">
             <span>{{ kb.file_count }} 个文件</span>
             <span v-for="t in kb.file_types?.slice(0, 3)" :key="t" class="tag" :style="{ color: typeColor(t), background: typeColor(t) + '15' }">{{ t }}</span>
@@ -305,6 +330,19 @@ onMounted(loadKbs)
   font-size: 12px;
   font-weight: 400;
   color: #4ade80;
+}
+
+.failed-indicator {
+  position: absolute;
+  bottom: -2px;
+  left: -2px;
+  color: #ef4444;
+}
+
+.failed-text {
+  font-size: 12px;
+  font-weight: 400;
+  color: #ef4444;
 }
 
 .processing-bar {
@@ -483,6 +521,15 @@ onMounted(loadKbs)
 .card-name { font-size: 15px; font-weight: 600; }
 .card-desc { font-size: 12px; color: var(--c-secondary); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card-foot { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--c-border); font-size: 11px; color: var(--c-secondary); gap: 6px; }
+
+.card-icon-box { position: relative; width: 40px; height: 40px; border-radius: 10px; background: var(--c-muted); display: flex; align-items: center; justify-content: center; }
+.card-badge { position: absolute; top: -4px; right: -6px; background: var(--c-fg); color: var(--c-bg); font-size: 10px; font-weight: 700; min-width: 17px; height: 17px; border-radius: 9px; display: flex; align-items: center; justify-content: center; padding: 0 5px; }
+.card-processing-indicator { position: absolute; bottom: -2px; right: -2px; color: #4ade80; }
+.card-failed-indicator { position: absolute; bottom: -2px; left: -2px; color: #ef4444; }
+.card-processing-text { font-size: 12px; font-weight: 400; color: #4ade80; margin-left: 6px; }
+.card-failed-text { font-size: 12px; font-weight: 400; color: #ef4444; margin-left: 6px; }
+.card-progress-bar { height: 4px; background: var(--c-muted); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+.card-progress-fill { height: 100%; background: linear-gradient(90deg, #4ade80, #22c55e); border-radius: 2px; transition: width 0.3s ease; }
 
 /* Empty */
 .empty-icon { color: var(--c-border); margin-bottom: 10px; }

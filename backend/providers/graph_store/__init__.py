@@ -146,11 +146,13 @@ class KuzuGraphAdapter(GraphStoreAdapter):
         
         if is_write:
             with _kuzu_write_lock:
-                conn = self._connection()
-                return conn.execute(query, parameters=parameters or {})
+                return self._execute_internal(query, parameters)
         else:
-            conn = self._connection()
-            return conn.execute(query, parameters=parameters or {})
+            return self._execute_internal(query, parameters)
+
+    def _execute_internal(self, query: str, parameters: dict | None = None):
+        conn = self._connection()
+        return conn.execute(query, parameters=parameters or {})
 
     def _execute_dict(self, query: str, parameters: dict | None = None) -> list[dict]:
         result = self._execute(query, parameters)
@@ -180,6 +182,10 @@ class KuzuGraphAdapter(GraphStoreAdapter):
                 pass
 
     def delete_document_graph(self, file_id: str):
+        with _kuzu_write_lock:
+            self._delete_document_graph_internal(file_id)
+
+    def _delete_document_graph_internal(self, file_id: str):
         self._execute(
             """
             MATCH (r:Relation)<-[:HAS_RELATION]-(c:Chunk {file_id: $file_id})
@@ -222,192 +228,193 @@ class KuzuGraphAdapter(GraphStoreAdapter):
         chunks: list[ChunkGraphData],
         clear_existing: bool = True,
     ):
-        if clear_existing:
-            self.delete_document_graph(file_id)
-        self._execute(
-            """
-            MERGE (kb:KnowledgeBase {id: $kb_id})
-            ON CREATE SET kb.name = $kb_name, kb.description = ''
-            ON MATCH SET kb.name = $kb_name
-            """,
-            {"kb_id": kb_id, "kb_name": kb_name},
-        )
-        self._execute(
-            """
-            MERGE (d:Document {id: $file_id})
-            ON CREATE SET d.kb_id = $kb_id, d.name = $file_name, d.path = $file_path
-            ON MATCH SET d.kb_id = $kb_id, d.name = $file_name, d.path = $file_path
-            """,
-            {
-                "file_id": file_id,
-                "kb_id": kb_id,
-                "file_name": file_name,
-                "file_path": file_path,
-            },
-        )
-        self._execute(
-            """
-            MATCH (kb:KnowledgeBase {id: $kb_id}), (d:Document {id: $file_id})
-            MERGE (kb)-[:HAS_DOCUMENT]->(d)
-            """,
-            {"kb_id": kb_id, "file_id": file_id},
-        )
-
-        previous_chunk_id = None
-        for chunk in chunks:
-            self._execute(
+        with _kuzu_write_lock:
+            if clear_existing:
+                self._delete_document_graph_internal(file_id)
+            self._execute_internal(
                 """
-                MERGE (c:Chunk {id: $chunk_id})
-                ON CREATE SET c.file_id = $file_id, c.kb_id = $kb_id, c.chunk_index = $chunk_index, c.content = $content
-                ON MATCH SET c.file_id = $file_id, c.kb_id = $kb_id, c.chunk_index = $chunk_index, c.content = $content
+                MERGE (kb:KnowledgeBase {id: $kb_id})
+                ON CREATE SET kb.name = $kb_name, kb.description = ''
+                ON MATCH SET kb.name = $kb_name
+                """,
+                {"kb_id": kb_id, "kb_name": kb_name},
+            )
+            self._execute_internal(
+                """
+                MERGE (d:Document {id: $file_id})
+                ON CREATE SET d.kb_id = $kb_id, d.name = $file_name, d.path = $file_path
+                ON MATCH SET d.kb_id = $kb_id, d.name = $file_name, d.path = $file_path
                 """,
                 {
-                    "chunk_id": chunk.chunk_id,
                     "file_id": file_id,
                     "kb_id": kb_id,
-                    "chunk_index": chunk.chunk_index,
-                    "content": chunk.content,
+                    "file_name": file_name,
+                    "file_path": file_path,
                 },
             )
-            self._execute(
+            self._execute_internal(
                 """
-                MATCH (d:Document {id: $file_id}), (c:Chunk {id: $chunk_id})
-                MERGE (d)-[:HAS_CHUNK]->(c)
+                MATCH (kb:KnowledgeBase {id: $kb_id}), (d:Document {id: $file_id})
+                MERGE (kb)-[:HAS_DOCUMENT]->(d)
                 """,
-                {"file_id": file_id, "chunk_id": chunk.chunk_id},
+                {"kb_id": kb_id, "file_id": file_id},
             )
 
-            if previous_chunk_id is not None:
-                self._execute(
+            previous_chunk_id = None
+            for chunk in chunks:
+                self._execute_internal(
                     """
-                    MATCH (prev:Chunk {id: $prev_chunk_id}), (curr:Chunk {id: $chunk_id})
-                    MERGE (prev)-[r:NEXT_CHUNK]->(curr)
-                    ON CREATE SET r.order_index = $chunk_index
-                    ON MATCH SET r.order_index = $chunk_index
+                    MERGE (c:Chunk {id: $chunk_id})
+                    ON CREATE SET c.file_id = $file_id, c.kb_id = $kb_id, c.chunk_index = $chunk_index, c.content = $content
+                    ON MATCH SET c.file_id = $file_id, c.kb_id = $kb_id, c.chunk_index = $chunk_index, c.content = $content
                     """,
                     {
-                        "prev_chunk_id": previous_chunk_id,
                         "chunk_id": chunk.chunk_id,
+                        "file_id": file_id,
+                        "kb_id": kb_id,
                         "chunk_index": chunk.chunk_index,
+                        "content": chunk.content,
                     },
                 )
-            previous_chunk_id = chunk.chunk_id
-
-            for entity in chunk.entities:
-                entity_name = _normalize_text(entity.name)
-                entity_type = _normalize_text(entity.entity_type, "UNKNOWN")
-                entity_id = _entity_id(kb_id, entity_name, entity_type)
-                self._execute(
+                self._execute_internal(
                     """
-                    MERGE (e:Entity {id: $entity_id})
-                    ON CREATE SET e.kb_id = $kb_id, e.name = $entity_name, e.entity_type = $entity_type, e.description = $description
-                    ON MATCH SET e.description = CASE WHEN e.description = '' THEN $description ELSE e.description END
+                    MATCH (d:Document {id: $file_id}), (c:Chunk {id: $chunk_id})
+                    MERGE (d)-[:HAS_CHUNK]->(c)
                     """,
-                    {
-                        "entity_id": entity_id,
-                        "kb_id": kb_id,
-                        "entity_name": entity_name,
-                        "entity_type": entity_type,
-                        "description": _normalize_text(entity.description),
-                    },
-                )
-                self._execute(
-                    """
-                    MATCH (c:Chunk {id: $chunk_id}), (e:Entity {id: $entity_id})
-                    MERGE (c)-[:MENTIONS]->(e)
-                    """,
-                    {"chunk_id": chunk.chunk_id, "entity_id": entity_id},
+                    {"file_id": file_id, "chunk_id": chunk.chunk_id},
                 )
 
-            for relation in chunk.relations:
-                source_name = _normalize_text(relation.source_name)
-                source_type = _normalize_text(relation.source_type, "UNKNOWN")
-                target_name = _normalize_text(relation.target_name)
-                target_type = _normalize_text(relation.target_type, "UNKNOWN")
-                relation_type = _normalize_text(relation.relation_type, "RELATED_TO")
-                source_id = _entity_id(kb_id, source_name, source_type)
-                target_id = _entity_id(kb_id, target_name, target_type)
-                relation_id = _relation_id(
-                    kb_id,
-                    source_name,
-                    source_type,
-                    target_name,
-                    target_type,
-                    relation_type,
-                )
+                if previous_chunk_id is not None:
+                    self._execute_internal(
+                        """
+                        MATCH (prev:Chunk {id: $prev_chunk_id}), (curr:Chunk {id: $chunk_id})
+                        MERGE (prev)-[r:NEXT_CHUNK]->(curr)
+                        ON CREATE SET r.order_index = $chunk_index
+                        ON MATCH SET r.order_index = $chunk_index
+                        """,
+                        {
+                            "prev_chunk_id": previous_chunk_id,
+                            "chunk_id": chunk.chunk_id,
+                            "chunk_index": chunk.chunk_index,
+                        },
+                    )
+                previous_chunk_id = chunk.chunk_id
 
-                self._execute(
-                    """
-                    MERGE (source:Entity {id: $source_id})
-                    ON CREATE SET source.kb_id = $kb_id, source.name = $source_name, source.entity_type = $source_type, source.description = ''
-                    """,
-                    {
-                        "source_id": source_id,
-                        "kb_id": kb_id,
-                        "source_name": source_name,
-                        "source_type": source_type,
-                    },
-                )
-                self._execute(
-                    """
-                    MERGE (target:Entity {id: $target_id})
-                    ON CREATE SET target.kb_id = $kb_id, target.name = $target_name, target.entity_type = $target_type, target.description = ''
-                    """,
-                    {
-                        "target_id": target_id,
-                        "kb_id": kb_id,
-                        "target_name": target_name,
-                        "target_type": target_type,
-                    },
-                )
-                self._execute(
-                    """
-                    MERGE (r:Relation {id: $relation_id})
-                    ON CREATE SET r.kb_id = $kb_id, r.relation_type = $relation_type, r.description = $description
-                    ON MATCH SET r.description = CASE WHEN r.description = '' THEN $description ELSE r.description END
-                    """,
-                    {
-                        "relation_id": relation_id,
-                        "kb_id": kb_id,
-                        "relation_type": relation_type,
-                        "description": _normalize_text(relation.description),
-                    },
-                )
-                self._execute(
-                    """
-                    MATCH (c:Chunk {id: $chunk_id}), (r:Relation {id: $relation_id})
-                    MERGE (c)-[:HAS_RELATION]->(r)
-                    """,
-                    {"chunk_id": chunk.chunk_id, "relation_id": relation_id},
-                )
-                self._execute(
-                    """
-                    MATCH (r:Relation {id: $relation_id}), (source:Entity {id: $source_id})
-                    MERGE (r)-[:RELATION_SOURCE]->(source)
-                    """,
-                    {"relation_id": relation_id, "source_id": source_id},
-                )
-                self._execute(
-                    """
-                    MATCH (r:Relation {id: $relation_id}), (target:Entity {id: $target_id})
-                    MERGE (r)-[:RELATION_TARGET]->(target)
-                    """,
-                    {"relation_id": relation_id, "target_id": target_id},
-                )
-                self._execute(
-                    """
-                    MATCH (source:Entity {id: $source_id}), (target:Entity {id: $target_id})
-                    MERGE (source)-[rel:RELATES]->(target)
-                    ON CREATE SET rel.relation_id = $relation_id, rel.relation_type = $relation_type
-                    ON MATCH SET rel.relation_type = $relation_type
-                    """,
-                    {
-                        "source_id": source_id,
-                        "target_id": target_id,
-                        "relation_id": relation_id,
-                        "relation_type": relation_type,
-                    },
-                )
+                for entity in chunk.entities:
+                    entity_name = _normalize_text(entity.name)
+                    entity_type = _normalize_text(entity.entity_type, "UNKNOWN")
+                    entity_id = _entity_id(kb_id, entity_name, entity_type)
+                    self._execute_internal(
+                        """
+                        MERGE (e:Entity {id: $entity_id})
+                        ON CREATE SET e.kb_id = $kb_id, e.name = $entity_name, e.entity_type = $entity_type, e.description = $description
+                        ON MATCH SET e.description = CASE WHEN e.description = '' THEN $description ELSE e.description END
+                        """,
+                        {
+                            "entity_id": entity_id,
+                            "kb_id": kb_id,
+                            "entity_name": entity_name,
+                            "entity_type": entity_type,
+                            "description": _normalize_text(entity.description),
+                        },
+                    )
+                    self._execute_internal(
+                        """
+                        MATCH (c:Chunk {id: $chunk_id}), (e:Entity {id: $entity_id})
+                        MERGE (c)-[:MENTIONS]->(e)
+                        """,
+                        {"chunk_id": chunk.chunk_id, "entity_id": entity_id},
+                    )
+
+                for relation in chunk.relations:
+                    source_name = _normalize_text(relation.source_name)
+                    source_type = _normalize_text(relation.source_type, "UNKNOWN")
+                    target_name = _normalize_text(relation.target_name)
+                    target_type = _normalize_text(relation.target_type, "UNKNOWN")
+                    relation_type = _normalize_text(relation.relation_type, "RELATED_TO")
+                    source_id = _entity_id(kb_id, source_name, source_type)
+                    target_id = _entity_id(kb_id, target_name, target_type)
+                    relation_id = _relation_id(
+                        kb_id,
+                        source_name,
+                        source_type,
+                        target_name,
+                        target_type,
+                        relation_type,
+                    )
+
+                    self._execute_internal(
+                        """
+                        MERGE (source:Entity {id: $source_id})
+                        ON CREATE SET source.kb_id = $kb_id, source.name = $source_name, source.entity_type = $source_type, source.description = ''
+                        """,
+                        {
+                            "source_id": source_id,
+                            "kb_id": kb_id,
+                            "source_name": source_name,
+                            "source_type": source_type,
+                        },
+                    )
+                    self._execute_internal(
+                        """
+                        MERGE (target:Entity {id: $target_id})
+                        ON CREATE SET target.kb_id = $kb_id, target.name = $target_name, target.entity_type = $target_type, target.description = ''
+                        """,
+                        {
+                            "target_id": target_id,
+                            "kb_id": kb_id,
+                            "target_name": target_name,
+                            "target_type": target_type,
+                        },
+                    )
+                    self._execute_internal(
+                        """
+                        MERGE (r:Relation {id: $relation_id})
+                        ON CREATE SET r.kb_id = $kb_id, r.relation_type = $relation_type, r.description = $description
+                        ON MATCH SET r.description = CASE WHEN r.description = '' THEN $description ELSE r.description END
+                        """,
+                        {
+                            "relation_id": relation_id,
+                            "kb_id": kb_id,
+                            "relation_type": relation_type,
+                            "description": _normalize_text(relation.description),
+                        },
+                    )
+                    self._execute_internal(
+                        """
+                        MATCH (c:Chunk {id: $chunk_id}), (r:Relation {id: $relation_id})
+                        MERGE (c)-[:HAS_RELATION]->(r)
+                        """,
+                        {"chunk_id": chunk.chunk_id, "relation_id": relation_id},
+                    )
+                    self._execute_internal(
+                        """
+                        MATCH (r:Relation {id: $relation_id}), (source:Entity {id: $source_id})
+                        MERGE (r)-[:RELATION_SOURCE]->(source)
+                        """,
+                        {"relation_id": relation_id, "source_id": source_id},
+                    )
+                    self._execute_internal(
+                        """
+                        MATCH (r:Relation {id: $relation_id}), (target:Entity {id: $target_id})
+                        MERGE (r)-[:RELATION_TARGET]->(target)
+                        """,
+                        {"relation_id": relation_id, "target_id": target_id},
+                    )
+                    self._execute_internal(
+                        """
+                        MATCH (source:Entity {id: $source_id}), (target:Entity {id: $target_id})
+                        MERGE (source)-[rel:RELATES]->(target)
+                        ON CREATE SET rel.relation_id = $relation_id, rel.relation_type = $relation_type
+                        ON MATCH SET rel.relation_type = $relation_type
+                        """,
+                        {
+                            "source_id": source_id,
+                            "target_id": target_id,
+                            "relation_id": relation_id,
+                            "relation_type": relation_type,
+                        },
+                    )
 
     def health_check(self):
         result = self._execute("RETURN 1 AS ok")
