@@ -153,12 +153,91 @@ def _normalize_search_url(url: str) -> str | None:
     return url
 
 
-def _search_web(keyword: str, limit: int, timeout: int) -> list[str]:
+def _search_tavily(keyword: str, limit: int, timeout: int) -> list[str]:
+    """用 Tavily API 搜索（专门为 AI 设计的搜索，返回高质量结果）。"""
+    api_key = settings.TAVILY_API_KEY
+    if not api_key:
+        logger.debug("Tavily API key 未配置，跳过")
+        return []
+    search_url = "https://api.tavily.com/search"
+    payload = {
+        "api_key": api_key,
+        "query": keyword,
+        "max_results": limit,
+        "search_depth": "basic",
+    }
+    logger.info("Tavily 搜索请求：%s", keyword)
+    try:
+        import json as _json
+        req = Request(
+            search_url,
+            data=_json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(req, timeout=timeout) as resp:
+            data = _json.loads(resp.read())
+        results = data.get("results", [])
+        urls = [r["url"] for r in results if r.get("url")]
+        logger.info("Tavily 搜索到 %d 个结果", len(urls))
+        return urls[:limit]
+    except Exception as e:
+        logger.warning("Tavily 搜索失败：%s", e)
+        return []
+
+
+def _search_bing(keyword: str, limit: int, timeout: int) -> list[str]:
+    """用 Bing 国内版搜索，国内可直连。只提取 b_algo 块中的结果链接。"""
+    search_url = f"https://cn.bing.com/search?q={quote_plus(keyword)}&count={min(limit, 50)}"
+    logger.info("Bing 搜索请求：%s", search_url)
+    try:
+        html = _fetch_url(search_url, timeout)
+    except Exception as e:
+        logger.warning("Bing 搜索请求失败：%s", e)
+        return []
+    logger.debug("Bing 响应长度：%d 字符", len(html))
+    # Bing 搜索结果在 <li class="b_algo"> 或 <li class="b_algo ..."> 块中
+    algo_blocks = re.findall(r'<li[^>]*class="[^"]*b_algo[^"]*"[^>]*>(.*?)</li>', html, re.S)
+    raw_urls: list[str] = []
+    if algo_blocks:
+        for block in algo_blocks:
+            m = re.search(r'href="(https?://[^"]+)"', block)
+            if m:
+                raw_urls.append(m.group(1))
+    if not raw_urls:
+        # 兜底：直接匹配 <h2><a href="..."> 结构
+        raw_urls = re.findall(r'<h2[^>]*>\s*<a[^>]*href="(https?://[^"]+)"[^>]*>', html)
+    urls: list[str] = []
+    seen: set[str] = set()
+    skip_domains = {"bing.com", "microsoft.com", "msn.com", "go.microsoft.com"}
+    for url in raw_urls:
+        parsed = urlparse(url)
+        if any(d in parsed.netloc for d in skip_domains):
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+        if len(urls) >= limit:
+            break
+    logger.info("Bing 搜索到 %d 个链接", len(urls))
+    return urls
+
+
+def _search_duckduckgo(keyword: str, limit: int, timeout: int) -> list[str]:
+    """用 DuckDuckGo HTML 版搜索，作为备选。"""
     search_url = f"https://duckduckgo.com/html/?q={quote_plus(keyword)}"
-    html = _fetch_url(search_url, timeout)
+    logger.info("DuckDuckGo 搜索请求：%s", search_url)
+    try:
+        html = _fetch_url(search_url, timeout)
+    except Exception as e:
+        logger.warning("DuckDuckGo 搜索请求失败：%s", e)
+        return []
+    logger.debug("DuckDuckGo 响应长度：%d 字符", len(html))
     candidates = re.findall(r'href="([^"]+)"[^>]*class="result__a"', html)
     if not candidates:
         candidates = re.findall(r'class="result__a"[^>]*href="([^"]+)"', html)
+    logger.info("DuckDuckGo 搜索到 %d 个候选链接", len(candidates))
     urls: list[str] = []
     seen: set[str] = set()
     for item in candidates:
@@ -170,6 +249,17 @@ def _search_web(keyword: str, limit: int, timeout: int) -> list[str]:
         if len(urls) >= limit:
             break
     return urls
+
+
+def _search_web(keyword: str, limit: int, timeout: int) -> list[str]:
+    """按配置的搜索引擎搜索。"""
+    provider = settings.SEARCH_PROVIDER.lower()
+    if provider == "tavily":
+        return _search_tavily(keyword, limit, timeout)
+    elif provider == "duckduckgo":
+        return _search_duckduckgo(keyword, limit, timeout)
+    else:
+        return _search_bing(keyword, limit, timeout)
 
 
 def _clean_thinking(content: str) -> str:
@@ -389,7 +479,7 @@ class CrawlService:
             if not job:
                 return
             try:
-                limit = max(1, min(max_pages or settings.CRAWL_MAX_PAGES, 20))
+                limit = max(1, max_pages or settings.CRAWL_MAX_PAGES)
 
                 # ── Stage: Search ──
                 await CrawlService._update_stage(db, job, stage="search", progress=5, message="正在搜索互联网资料", status="running")
@@ -402,7 +492,8 @@ class CrawlService:
                     settings.CRAWL_TIMEOUT_SECONDS,
                 )
                 if not urls:
-                    raise RuntimeError("未搜索到可采集网页")
+                    await CrawlService._append_log(db, job, "error", "DuckDuckGo 搜索未返回结果，可能是网络问题或被反爬拦截")
+                    raise RuntimeError("未搜索到可采集网页，请检查网络连接或稍后重试")
 
                 job.urls = json.dumps(urls, ensure_ascii=False)
                 await db.commit()

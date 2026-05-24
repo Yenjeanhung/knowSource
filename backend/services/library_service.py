@@ -117,9 +117,7 @@ class LibraryService:
 
     @staticmethod
     async def default_crawl_directory(db: AsyncSession, keyword: str) -> FileDirectory:
-        day = datetime.now().strftime("%Y-%m-%d")
-        safe_keyword = keyword.strip()[:48] or "未命名采集"
-        return await LibraryService.ensure_directory_path(db, ["网络采集", safe_keyword, day])
+        return await LibraryService.ensure_directory_path(db, ["采集"])
 
     @staticmethod
     async def _calculate_directory_file_count(db: AsyncSession, directory_id: str | None, all_directories: list[FileDirectory], all_assets: list[FileAsset]) -> int:

@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
+from config import settings
 from schemas import (
     AttachAssetsRequest,
     CreateCrawlJobRequest,
@@ -16,6 +17,11 @@ from services.crawl_service import CrawlService
 from services.library_service import LibraryService
 
 router = APIRouter()
+
+
+@router.get("/config")
+async def get_config():
+    return {"crawl_max_pages": settings.CRAWL_MAX_PAGES}
 
 
 @router.get("/file-directories")
@@ -168,17 +174,14 @@ async def create_crawl_job(req: CreateCrawlJobRequest, db: AsyncSession = Depend
         raise HTTPException(400, str(exc))
 
 
+@router.get("/crawl-jobs/latest")
+async def get_latest_crawl_job(db: AsyncSession = Depends(get_db)):
+    return await CrawlService.get_latest_job(db)
+
+
 @router.get("/crawl-jobs/{job_id}")
 async def get_crawl_job(job_id: str, db: AsyncSession = Depends(get_db)):
     result = await CrawlService.get_job(db, job_id)
     if not result:
         raise HTTPException(404, "Crawl job not found")
-    return result
-
-
-@router.get("/crawl-jobs/latest")
-async def get_latest_crawl_job(db: AsyncSession = Depends(get_db)):
-    result = await CrawlService.get_latest_job(db)
-    if result is None:
-        return None
     return result

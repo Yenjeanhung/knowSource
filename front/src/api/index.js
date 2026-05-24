@@ -275,6 +275,12 @@ export async function attachAssetsToKb(kbId, assetIds, { autoProcess = false, ex
   return res.json()
 }
 
+export async function fetchConfig() {
+  const res = await fetch(`${API}/api/config`)
+  if (!res.ok) throw new Error('Fetch config failed')
+  return res.json()
+}
+
 export async function createCrawlJob({
   keyword,
   directoryId = null,

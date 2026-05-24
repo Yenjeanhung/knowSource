@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     CRAWL_RATE_LIMIT_SECONDS: float = 1.0
     CRAWL_LLM_FILTER: bool = True
     CRAWL_SAVE_RAW_HTML: bool = False
+    # 搜索引擎（tavily / bing / duckduckgo）
+    SEARCH_PROVIDER: str = "tavily"
+    TAVILY_API_KEY: str = ""
 
     class Config:
         env_file = ".env"

@@ -225,7 +225,7 @@ onMounted(() => {
     <main class="main-area">
       <router-view v-slot="{ Component, route }">
         <KeepAlive v-if="route.meta.keepAlive">
-          <component :is="Component" />
+          <component :is="Component" :key="route.params.kbId || route.path" />
         </KeepAlive>
         <component :is="Component" v-else />
       </router-view>

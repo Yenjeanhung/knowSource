@@ -155,12 +155,22 @@ onMounted(async () => {
   try {
     kb.value = await getKb(props.kbId)
     files.value = (kb.value.files || []).map(normalizeFile)
+    const initialCollapsed = new Set()
     for (const file of files.value) {
-      if (file.status === 'processing') startStatusWatch(file.id)
-      // 处理完成的文件默认折叠
-      if (file.status === 'indexed') collapsedFiles.value.add(file.id)
+      if (file.status === 'processing') {
+        processing.value[file.id] = file.progress || 0
+        if (file.detail) syncStageTimers(file.id, file.detail)
+        startStatusWatch(file.id)
+      }
+      if (file.status === 'indexed') {
+        initialCollapsed.add(file.id)
+        if (file.detail) syncStageTimers(file.id, file.detail)
+      }
     }
-  } catch {}
+    collapsedFiles.value = initialCollapsed
+  } catch (e) {
+    console.error('Failed to load knowledge base:', e)
+  }
   clockTimer = setInterval(() => {
     nowTick.value = Date.now()
   }, 1000)

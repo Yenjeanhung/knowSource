@@ -16,7 +16,13 @@
 
 
 # Bug
-
+## 启动时不要连hg了
+(MaxRetryError('HTTPSConnectionPool(host=\'huggingface.co\', port=443): Max retries exceeded with url: /BAAI/bge-small-zh-v1.5/resolve/main/config_sentence_transformers.json (Caused by NewConnectionError("HTTPSConnection(host=\'huggingface.co\', port=443): Failed to establish a new connection: [WinError 10061] 由于目标计算机积极拒绝，无法连接。"))'), '(Request ID: 9c670b1c-b225-4409-9156-0923eb5a7eed)')' thrown while requesting HEAD https://huggingface.co/BAAI/bge-small-zh-v1.5/resolve/main/config_sentence_transformers.json
+2026-05-24 20:29:05 - huggingface_hub.utils._http - WARNING - '(MaxRetryError('HTTPSConnectionPool(host=\'huggingface.co\', port=443): Max retries exceeded with url: /BAAI/bge-small-zh-v1.5/resolve/main/config_sentence_transformers.json (Caused by NewConnectionError("HTTPSConnection(host=\'huggingface.co\', port=443): Failed to establish a new connection: [WinError 10061] 由于目标计算机积极拒绝，无法连接。"))'), '(Request ID: 9c670b1c-b225-4409-9156-0923eb5a7eed)')' thrown while requesting HEAD https://huggingface.co/BAAI/bge-small-zh-v1.5/resolve/main/config_sentence_transformers.json
+Retrying in 2s [Retry 2/5].
+2026-05-24 20:29:05 - huggingface_hub.utils._http - WARNING - Retrying in 2s [Retry 2/5].
+2026-05-24 20:29:15 - __main__ - INFO - Loading LLM provider...
+2026-05-24 20:29:15 - langchain_openai.chat_models._client_utils - INFO - langchain-openai detected system proxy configuration and no explicit `http_socket_options` / `http_client` / `http_async_client` / `openai_proxy`; skipping the custom `httpx` transport so httpx's env-proxy auto-detection applies. Pass `http_socket_options=[...]` to opt back into kernel-level TCP keepalive tuning on top of the env proxy.
 
 
 

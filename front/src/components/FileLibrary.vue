@@ -11,6 +11,7 @@ import {
   deleteAsset as apiDeleteAsset,
   fetchAssetContent,
   fetchAssets,
+  fetchConfig,
   fetchDirectories,
   fetchKbs,
   getAssetPreviewUrl,
@@ -58,6 +59,7 @@ const crawlKeyword = ref('')
 const crawlMaxPages = ref(5)
 const crawlDepth = ref('medium')
 const crawlJob = ref(null)
+const crawlMaxLimit = ref(20)
 
 // 预览相关
 const previewAsset = ref(null)
@@ -200,7 +202,11 @@ async function loadKbs() {
 }
 
 async function refreshAll() {
-  await Promise.all([loadDirectories(), loadAssets(), loadKbs()])
+  const [, cfg] = await Promise.all([Promise.all([loadDirectories(), loadAssets(), loadKbs()]), fetchConfig().catch(() => ({}))])
+  if (cfg.crawl_max_pages) {
+    crawlMaxLimit.value = cfg.crawl_max_pages
+    if (crawlMaxPages.value > cfg.crawl_max_pages) crawlMaxPages.value = cfg.crawl_max_pages
+  }
 }
 
 function toggleDirectory(directoryId) {
@@ -531,16 +537,22 @@ function startCrawlPolling() {
 async function restoreCrawlJob() {
   try {
     const job = await getLatestCrawlJob()
-    if (job && (job.status === 'pending' || job.status === 'running' || job.status === 'queued')) {
-      crawlJob.value = job
+    if (!job) {
+      crawlJob.value = null
+      return
+    }
+    crawlJob.value = job
+    if (!job.finished_at && (job.status === 'running' || job.status === 'queued')) {
       startCrawlPolling()
     }
-  } catch {}
+  } catch (e) {
+    console.warn('恢复采集任务失败:', e)
+    crawlJob.value = null
+  }
 }
 
 onMounted(async () => {
-  await refreshAll()
-  await restoreCrawlJob()
+  await Promise.all([refreshAll(), restoreCrawlJob()])
 })
 
 onUnmounted(() => {
@@ -618,7 +630,7 @@ onUnmounted(() => {
         <div class="crawl-band">
           <div class="crawl-fields">
             <input type="text" v-model="crawlKeyword" placeholder="输入关键词联网采集资料">
-            <input type="number" class="small-input" v-model.number="crawlMaxPages" :min="1" placeholder="页数">
+            <input type="number" class="small-input" v-model.number="crawlMaxPages" :min="1" :max="crawlMaxLimit" placeholder="页数">
             <select v-model="crawlDepth" class="depth-select">
               <option value="low">分析维度：低</option>
               <option value="medium">分析维度：中</option>
