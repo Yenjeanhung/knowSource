@@ -5,12 +5,41 @@ const props = defineProps({
   node: { type: Object, required: true },
   expanded: { type: Set, required: true },
   selectedId: { type: String, default: '' },
-  showActions: { type: Boolean, default: true }
+  showActions: { type: Boolean, default: true },
+  draggingNodeId: { type: String, default: '' },
+  dragOverNodeId: { type: String, default: '' }
 })
 
-const emit = defineEmits(['toggle', 'select', 'edit', 'delete'])
+const emit = defineEmits(['toggle', 'select', 'edit', 'delete', 'dragstart', 'dragend', 'dragover', 'dragleave', 'drop'])
 const showMenu = ref(false)
 const menuPosition = ref({ x: 0, y: 0 })
+
+function handleDragStart(e) {
+  e.dataTransfer.setData('application/json', JSON.stringify({ id: props.node.id, name: props.node.name }))
+  e.dataTransfer.effectAllowed = 'move'
+  emit('dragstart', props.node)
+}
+
+function handleDragEnd() {
+  emit('dragend')
+}
+
+function handleDragOver(e) {
+  e.preventDefault()
+  e.stopPropagation()
+  e.dataTransfer.dropEffect = 'move'
+  emit('dragover', props.node)
+}
+
+function handleDragLeave() {
+  emit('dragleave', props.node)
+}
+
+function handleDrop(e) {
+  e.preventDefault()
+  e.stopPropagation()
+  emit('drop', props.node)
+}
 
 function handleContextMenu(e) {
   if (!props.showActions) return
@@ -39,9 +68,15 @@ function handleDelete() {
 <template>
   <div class="folder-tree-node">
     <div
-      :class="['folder-item', { active: selectedId === node.id }]"
+      :class="['folder-item', { active: selectedId === node.id, dragging: draggingNodeId === node.id, 'drag-over': dragOverNodeId === node.id }]"
       @click="emit('select', node.id)"
       @contextmenu="handleContextMenu"
+      :draggable="showActions"
+      @dragstart="handleDragStart"
+      @dragend="handleDragEnd"
+      @dragover="handleDragOver"
+      @dragleave="handleDragLeave"
+      @drop="handleDrop"
     >
       <button
         v-if="node.children && node.children.length > 0"
@@ -62,7 +97,7 @@ function handleDelete() {
         <span v-if="(node.file_count || 0) > 0" class="file-badge">{{ node.file_count }}</span>
       </div>
       
-      <span class="item-name">{{ node.name }}</span>
+      <span class="item-name" :title="node.name">{{ node.name }}</span>
       
       <div v-if="showActions" class="item-actions">
         <button class="action-btn edit-btn" @click.stop="emit('edit', node)" title="编辑">
@@ -89,10 +124,17 @@ function handleDelete() {
         :show-actions="showActions"
         :expanded="expanded"
         :selected-id="selectedId"
+        :dragging-node-id="draggingNodeId"
+        :drag-over-node-id="dragOverNodeId"
         @toggle="emit('toggle', $event)"
         @select="emit('select', $event)"
         @edit="emit('edit', $event)"
         @delete="emit('delete', $event)"
+        @dragstart="emit('dragstart', $event)"
+        @dragend="emit('dragend')"
+        @dragover="emit('dragover', $event)"
+        @dragleave="emit('dragleave', $event)"
+        @drop="emit('drop', $event)"
       />
     </div>
     
@@ -299,5 +341,28 @@ function handleDelete() {
 
 .menu-item.danger:hover {
   background-color: rgba(239, 68, 68, 0.1);
+}
+
+/* Drag and Drop styles */
+.folder-item[draggable="true"] {
+  cursor: grab;
+}
+
+.folder-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.folder-item.dragging {
+  opacity: 0.5;
+  background-color: var(--c-muted);
+}
+
+.folder-item.drag-over {
+  background-color: var(--c-accent-muted);
+  border-left: 2px solid var(--c-accent);
+}
+
+.folder-item.drag-over .item-icon {
+  color: var(--c-accent);
 }
 </style>

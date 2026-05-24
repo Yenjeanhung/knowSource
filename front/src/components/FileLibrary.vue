@@ -30,6 +30,8 @@ const kbs = ref([])
 const selectedDirectoryId = ref('')
 const expandedDirectories = ref(new Set(['']))
 const search = ref('')
+const draggingNode = ref(null)
+const dragOverNodeId = ref(null)
 const uploading = ref({})
 const selectedAssets = ref(new Set())
 const selectedKbId = ref('')
@@ -62,12 +64,15 @@ const previewLoading = ref(false)
 
 let crawlTimer = null
 
-function showConfirm(title, message, confirmText = '确定', cancelText = '取消') {
+const confirmDialogType = ref('warning')
+
+function showConfirm(title, message, confirmText = '确定', cancelText = '取消', type = 'warning') {
   return new Promise(resolve => {
     confirmDialogTitle.value = title
     confirmDialogMessage.value = message
     confirmDialogConfirmText.value = confirmText
     confirmDialogCancelText.value = cancelText
+    confirmDialogType.value = type
     confirmDialogCallback = resolve
     showConfirmDialog.value = true
   })
@@ -146,6 +151,93 @@ function toggleDirectory(directoryId) {
 function selectDirectory(id) {
   selectedDirectoryId.value = id
   loadAssets()
+}
+
+// 拖拽处理
+function handleDragStart(node) {
+  draggingNode.value = node
+}
+
+function handleDragEnd() {
+  draggingNode.value = null
+  dragOverNodeId.value = null
+}
+
+function handleDragOver(node) {
+  if (draggingNode.value && draggingNode.value.id !== node.id) {
+    dragOverNodeId.value = node.id
+  }
+}
+
+function handleDragLeave(node) {
+  if (dragOverNodeId.value === node.id) {
+    dragOverNodeId.value = null
+  }
+}
+
+async function handleDrop(targetNode) {
+  if (!draggingNode.value) return
+  
+  const sourceNode = draggingNode.value
+  
+  // 不能拖到自己或自己的子目录下
+  if (sourceNode.id === targetNode.id) {
+    handleDragEnd()
+    return
+  }
+  
+  // 检查是否拖到自己的子目录下
+  const isDescendant = isNodeDescendant(targetNode, sourceNode)
+  if (isDescendant) {
+    handleDragEnd()
+    return
+  }
+  
+  try {
+      await updateDirectory(sourceNode.id, { parentId: targetNode.id })
+      await loadDirectories()
+    } catch (error) {
+    console.error('Failed to move folder:', error)
+  }
+  
+  handleDragEnd()
+}
+
+function isNodeDescendant(parent, child) {
+  if (!parent.children || parent.children.length === 0) return false
+  for (const childNode of parent.children) {
+    if (childNode.id === child.id) return true
+    if (isNodeDescendant(childNode, child)) return true
+  }
+  return false
+}
+
+// 根目录拖拽处理
+function handleRootDragOver() {
+  if (draggingNode.value) {
+    dragOverNodeId.value = 'root'
+  }
+}
+
+function handleRootDragLeave() {
+  if (dragOverNodeId.value === 'root') {
+    dragOverNodeId.value = null
+  }
+}
+
+async function handleRootDrop() {
+  if (!draggingNode.value) return
+  
+  const sourceNode = draggingNode.value
+  
+  try {
+    await updateDirectory(sourceNode.id, { parentId: null })
+    await loadDirectories()
+  } catch (error) {
+    console.error('Failed to move folder to root:', error)
+  }
+  
+  handleDragEnd()
 }
 
 // 文件夹操作
@@ -254,8 +346,15 @@ async function deleteAsset(asset) {
   if (!confirmed) return
   try {
     await apiDeleteAsset(asset.id)
-  } catch {
-    window.alert('删除文件失败')
+  } catch (error) {
+    console.error('Delete error:', error)
+    await showConfirm(
+      '删除失败',
+      '该文件已被知识库使用，无法删除。请先从知识库中移除该文件后再尝试删除。',
+      '确定',
+      '',
+      'warning'
+    )
   }
   await loadAssets()
 }
@@ -375,8 +474,11 @@ onUnmounted(() => {
         </div>
         <div class="folder-tree">
           <div
-            :class="['tree-root-item', { active: selectedDirectoryId === '' }]"
+            :class="['tree-root-item', { active: selectedDirectoryId === '', 'drag-over': dragOverNodeId === 'root' }]"
             @click="selectDirectory('')"
+            @dragover.prevent="handleRootDragOver"
+            @dragleave="handleRootDragLeave"
+            @drop="handleRootDrop"
           >
             <svg class="folder-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -390,10 +492,17 @@ onUnmounted(() => {
             :node="node"
             :expanded="expandedDirectories"
             :selected-id="selectedDirectoryId"
+            :dragging-node-id="draggingNode?.id || ''"
+            :drag-over-node-id="dragOverNodeId || ''"
             @toggle="toggleDirectory"
             @select="selectDirectory"
             @edit="openEditFolder"
             @delete="deleteFolder"
+            @dragstart="handleDragStart"
+            @dragend="handleDragEnd"
+            @dragover="handleDragOver"
+            @dragleave="handleDragLeave"
+            @drop="handleDrop"
           />
         </div>
       </aside>
@@ -549,16 +658,19 @@ onUnmounted(() => {
     <!-- 确认对话框 -->
     <div class="modal-mask" v-if="showConfirmDialog" @click.self="confirmDialogCancel">
       <div class="modal confirm-modal" @click.stop>
-        <div class="confirm-icon warning">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+        <div :class="['confirm-icon', confirmDialogType]">
+          <svg v-if="confirmDialogType === 'error'" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+          </svg>
+          <svg v-else width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 2L2 20h20L12 2zm0 15l-.5-6h1l-.5 6zm0-8l-.5-3h1l-.5 3z"/>
           </svg>
         </div>
         <div class="confirm-title">{{ confirmDialogTitle }}</div>
         <div class="confirm-message">{{ confirmDialogMessage }}</div>
         <div class="confirm-actions">
-          <button class="confirm-btn cancel" @click="confirmDialogCancel">{{ confirmDialogCancelText }}</button>
-          <button class="confirm-btn ok" @click="confirmDialogOk">{{ confirmDialogConfirmText }}</button>
+          <button v-if="confirmDialogCancelText" class="confirm-btn cancel" @click="confirmDialogCancel">{{ confirmDialogCancelText }}</button>
+          <button :class="['confirm-btn ok', confirmDialogType]" @click="confirmDialogOk">{{ confirmDialogConfirmText }}</button>
         </div>
       </div>
     </div>
@@ -649,6 +761,11 @@ onUnmounted(() => {
 .tree-root-item.active {
   background-color: var(--c-accent-muted);
   color: var(--c-fg);
+}
+
+.tree-root-item.drag-over {
+  background-color: var(--c-accent-muted);
+  border-left: 2px solid var(--c-accent);
 }
 
 .expand-placeholder {

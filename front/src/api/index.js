@@ -293,9 +293,14 @@ export async function getCrawlJob(jobId) {
 }
 
 export async function getLatestCrawlJob() {
-  const res = await fetch(`${API}/api/crawl-jobs/latest`)
-  if (!res.ok) throw new Error('Fetch latest crawl job failed')
-  return res.json()
+  try {
+    const res = await fetch(`${API}/api/crawl-jobs/latest`)
+    if (res.status === 404) return null
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
+  }
 }
 
 export function getAssetPreviewUrl(assetId) {

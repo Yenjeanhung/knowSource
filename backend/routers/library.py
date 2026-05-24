@@ -175,4 +175,6 @@ async def get_crawl_job(job_id: str, db: AsyncSession = Depends(get_db)):
 @router.get("/crawl-jobs/latest")
 async def get_latest_crawl_job(db: AsyncSession = Depends(get_db)):
     result = await CrawlService.get_latest_job(db)
+    if result is None:
+        return None
     return result
