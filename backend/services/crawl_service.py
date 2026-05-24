@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
 import uuid
@@ -18,6 +19,10 @@ from config import settings
 from database import async_session
 from models import CrawlJob
 from services.library_service import ASSET_DIR, LibraryService
+
+logger = logging.getLogger(__name__)
+
+LOG_TAIL_LIMIT = 120
 
 
 def _now_iso() -> str:
@@ -55,6 +60,30 @@ class _TextExtractor(HTMLParser):
         return unescape(content).strip()
 
 
+def _empty_detail() -> dict:
+    return {
+        "stage": "idle",
+        "started_at": None,
+        "finished_at": None,
+        "elapsed_ms": 0,
+        "stages": {
+            "search": {"progress": 0, "label": "等待开始", "started_at": None, "finished_at": None, "elapsed_ms": 0},
+            "fetch":  {"progress": 0, "label": "等待开始", "current": 0, "total": 0, "started_at": None, "finished_at": None, "elapsed_ms": 0},
+            "llm":    {"progress": 0, "label": "等待开始", "started_at": None, "finished_at": None, "elapsed_ms": 0},
+            "save":   {"progress": 0, "label": "等待开始", "started_at": None, "finished_at": None, "elapsed_ms": 0},
+        },
+    }
+
+
+def _parse_json_field(raw: str | None, default):
+    if raw:
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return default
+
+
 def _job_to_dict(job: CrawlJob) -> dict:
     return {
         "id": job.id,
@@ -65,6 +94,8 @@ def _job_to_dict(job: CrawlJob) -> dict:
         "message": job.message,
         "urls": json.loads(job.urls or "[]"),
         "file_count": job.file_count,
+        "detail": _parse_json_field(job.detail, None),
+        "logs": _parse_json_field(job.logs, []),
         "created_at": job.created_at,
         "finished_at": job.finished_at,
     }
@@ -142,7 +173,7 @@ def _search_web(keyword: str, limit: int, timeout: int) -> list[str]:
 
 
 def _clean_thinking(content: str) -> str:
-    return re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
+    return re.sub(r"<think[\s\S]*?</think\s*>", "", content).strip()
 
 
 def _summarize_with_llm(keyword: str, documents: list[dict], depth: str = "medium") -> tuple[str, str]:
@@ -150,7 +181,7 @@ def _summarize_with_llm(keyword: str, documents: list[dict], depth: str = "mediu
         f"来源：{item['url']}\n标题：{item['title']}\n正文摘录：{item['text'][:5000]}"
         for item in documents
     )
-    
+
     depth_config = {
         "low": {
             "prompt_suffix": "要求：简洁整理，保留核心事实和来源链接，给出 3 条要点。",
@@ -168,9 +199,9 @@ def _summarize_with_llm(keyword: str, documents: list[dict], depth: str = "mediu
             "text_limit": 5000,
         },
     }
-    
+
     config = depth_config.get(depth, depth_config["medium"])
-    
+
     fallback = "\n\n".join(
         f"## {item['title']}\n\n来源：{item['url']}\n\n{item['text'][:config['text_limit']]}"
         for item in documents
@@ -196,6 +227,91 @@ def _summarize_with_llm(keyword: str, documents: list[dict], depth: str = "mediu
 
 
 class CrawlService:
+    @staticmethod
+    async def _append_log(
+        db: AsyncSession,
+        job: CrawlJob,
+        level: str,
+        message: str,
+    ):
+        logs: list[dict] = _parse_json_field(job.logs, [])
+        logs.append({"time": _now_iso(), "level": level, "message": message[:500]})
+        if len(logs) > LOG_TAIL_LIMIT:
+            logs = logs[-LOG_TAIL_LIMIT:]
+        job.logs = json.dumps(logs, ensure_ascii=False)
+        if level == "error":
+            logger.error("[crawl:%s] %s", job.id, message)
+        elif level == "warning":
+            logger.warning("[crawl:%s] %s", job.id, message)
+        else:
+            logger.info("[crawl:%s] %s", job.id, message)
+        await db.commit()
+
+    @staticmethod
+    async def _update_stage(
+        db: AsyncSession,
+        job: CrawlJob,
+        *,
+        stage: str,
+        progress: int,
+        message: str,
+        status: str | None = None,
+        finished: bool = False,
+        stage_extra: dict | None = None,
+    ):
+        now = _now_iso()
+        detail: dict = _parse_json_field(job.detail, _empty_detail())
+
+        if detail.get("started_at") is None:
+            detail["started_at"] = now
+        if finished:
+            detail["finished_at"] = now
+            if detail.get("started_at"):
+                try:
+                    elapsed = (datetime.fromisoformat(detail["finished_at"]) -
+                               datetime.fromisoformat(detail["started_at"]))
+                    detail["elapsed_ms"] = int(elapsed.total_seconds() * 1000)
+                except (ValueError, TypeError):
+                    pass
+        detail["stage"] = stage
+
+        stages = detail.setdefault("stages", {})
+        stage_obj = stages.setdefault(stage, {"progress": 0, "label": ""})
+
+        if stage_obj.get("started_at") is None and progress > 0:
+            stage_obj["started_at"] = now
+        if progress >= 100:
+            stage_obj["finished_at"] = now
+            if stage_obj.get("started_at"):
+                try:
+                    elapsed = (datetime.fromisoformat(stage_obj["finished_at"]) -
+                               datetime.fromisoformat(stage_obj["started_at"]))
+                    stage_obj["elapsed_ms"] = int(elapsed.total_seconds() * 1000)
+                except (ValueError, TypeError):
+                    pass
+        stage_obj["progress"] = progress
+        stage_obj["label"] = message
+        if stage_extra:
+            stage_obj.update(stage_extra)
+
+        # Mark later stages as skipped if this stage just completed and they haven't started
+        stage_order = ["search", "fetch", "llm", "save"]
+        current_idx = stage_order.index(stage) if stage in stage_order else -1
+        for later in stage_order[current_idx + 1:]:
+            later_obj = stages.get(later)
+            if later_obj and later_obj.get("started_at") is None:
+                later_obj["progress"] = 0
+                later_obj["label"] = "等待开始"
+
+        job.detail = json.dumps(detail, ensure_ascii=False)
+        job.progress = max(0, min(100, progress))
+        job.message = message[:300]
+        if status is not None:
+            job.status = status
+        if finished:
+            job.finished_at = now
+        await db.commit()
+
     @staticmethod
     async def create_job(
         db: AsyncSession,
@@ -225,6 +341,8 @@ class CrawlService:
             progress=0,
             message="等待采集",
             urls="[]",
+            detail=json.dumps(_empty_detail(), ensure_ascii=False),
+            logs="[]",
         )
         db.add(job)
         await db.commit()
@@ -257,32 +375,6 @@ class CrawlService:
         return _job_to_dict(job) if job else None
 
     @staticmethod
-    async def _set_job_state(
-        db: AsyncSession,
-        job: CrawlJob,
-        *,
-        status: str | None = None,
-        progress: int | None = None,
-        message: str | None = None,
-        urls: list[str] | None = None,
-        file_count: int | None = None,
-        finished: bool = False,
-    ):
-        if status is not None:
-            job.status = status
-        if progress is not None:
-            job.progress = max(0, min(100, progress))
-        if message is not None:
-            job.message = message[:300]
-        if urls is not None:
-            job.urls = json.dumps(urls, ensure_ascii=False)
-        if file_count is not None:
-            job.file_count = file_count
-        if finished:
-            job.finished_at = _now_iso()
-        await db.commit()
-
-    @staticmethod
     async def _run_job(
         job_id: str,
         *,
@@ -298,13 +390,11 @@ class CrawlService:
                 return
             try:
                 limit = max(1, min(max_pages or settings.CRAWL_MAX_PAGES, 20))
-                await CrawlService._set_job_state(
-                    db,
-                    job,
-                    status="running",
-                    progress=5,
-                    message="正在搜索互联网资料",
-                )
+
+                # ── Stage: Search ──
+                await CrawlService._update_stage(db, job, stage="search", progress=5, message="正在搜索互联网资料", status="running")
+                await CrawlService._append_log(db, job, "info", f"开始采集，关键词：{job.keyword}，最大页数：{limit}")
+
                 urls = await asyncio.to_thread(
                     _search_web,
                     job.keyword,
@@ -314,21 +404,22 @@ class CrawlService:
                 if not urls:
                     raise RuntimeError("未搜索到可采集网页")
 
-                await CrawlService._set_job_state(
-                    db,
-                    job,
-                    progress=20,
-                    message=f"搜索完成，准备抓取 {len(urls)} 个网页",
-                    urls=urls,
-                )
+                job.urls = json.dumps(urls, ensure_ascii=False)
+                await db.commit()
+                await CrawlService._update_stage(db, job, stage="search", progress=100, message=f"搜索完成，发现 {len(urls)} 个网页")
+                await CrawlService._append_log(db, job, "info", f"搜索引擎返回 {len(urls)} 个结果 URL")
+
+                # ── Stage: Fetch ──
+                await CrawlService._update_stage(db, job, stage="fetch", progress=0, message=f"准备抓取 {len(urls)} 个网页")
+                await CrawlService._append_log(db, job, "info", f"开始逐个抓取网页内容")
 
                 documents: list[dict] = []
                 for index, url in enumerate(urls, start=1):
-                    await CrawlService._set_job_state(
-                        db,
-                        job,
-                        progress=20 + int(index / max(len(urls), 1) * 45),
-                        message=f"正在抓取网页 {index}/{len(urls)}",
+                    pct = int(index / len(urls) * 100)
+                    await CrawlService._update_stage(
+                        db, job, stage="fetch", progress=pct,
+                        message=f"抓取网页 {index}/{len(urls)}",
+                        stage_extra={"current": index, "total": len(urls)},
                     )
                     try:
                         html = await asyncio.to_thread(_fetch_url, url, settings.CRAWL_TIMEOUT_SECONDS)
@@ -336,7 +427,11 @@ class CrawlService:
                         text = _html_to_text(html)
                         if len(text) >= 200:
                             documents.append({"url": url, "title": title, "text": text})
-                    except Exception:
+                            await CrawlService._append_log(db, job, "info", f"[{index}/{len(urls)}] 抓取成功：{title[:60]}（{len(text)} 字）")
+                        else:
+                            await CrawlService._append_log(db, job, "warning", f"[{index}/{len(urls)}] 跳过（正文仅 {len(text)} 字，不足 200 字）：{url[:80]}")
+                    except Exception as fetch_exc:
+                        await CrawlService._append_log(db, job, "error", f"[{index}/{len(urls)}] 抓取失败：{url[:80]} — {fetch_exc}")
                         continue
                     if settings.CRAWL_RATE_LIMIT_SECONDS > 0:
                         await asyncio.to_thread(time.sleep, settings.CRAWL_RATE_LIMIT_SECONDS)
@@ -344,13 +439,20 @@ class CrawlService:
                 if not documents:
                     raise RuntimeError("网页抓取失败或正文过短")
 
-                await CrawlService._set_job_state(
-                    db,
-                    job,
-                    progress=75,
-                    message="正在调用大模型清洗整理资料",
-                )
+                await CrawlService._update_stage(db, job, stage="fetch", progress=100, message=f"抓取完成，有效网页 {len(documents)}/{len(urls)}")
+                await CrawlService._append_log(db, job, "info", f"抓取阶段完成，共 {len(documents)} 个有效文档（{len(urls) - len(documents)} 个失败或跳过）")
+
+                # ── Stage: LLM ──
+                await CrawlService._update_stage(db, job, stage="llm", progress=10, message="正在调用大模型清洗整理资料")
+                await CrawlService._append_log(db, job, "info", f"调用大模型整理资料，分析维度：{analysis_depth}，文档数：{len(documents)}")
+
                 markdown, summary = await asyncio.to_thread(_summarize_with_llm, job.keyword, documents, analysis_depth)
+
+                await CrawlService._update_stage(db, job, stage="llm", progress=100, message="大模型整理完成")
+                await CrawlService._append_log(db, job, "info", f"大模型返回内容 {len(markdown)} 字")
+
+                # ── Stage: Save ──
+                await CrawlService._update_stage(db, job, stage="save", progress=20, message="正在保存采集文件")
 
                 ASSET_DIR.mkdir(parents=True, exist_ok=True)
                 file_id = uuid.uuid4().hex[:12]
@@ -372,11 +474,14 @@ class CrawlService:
                     source_type="crawl",
                     source_url=documents[0]["url"],
                     source_keyword=job.keyword,
+                    sources=[{"url": d["url"], "title": d["title"]} for d in documents],
                     summary=summary,
                     move=True,
                 )
+                await CrawlService._append_log(db, job, "info", f"已保存文件：{asset.name}（{asset.size} 字节）")
 
                 if auto_attach_kb_id:
+                    await CrawlService._append_log(db, job, "info", f"正在添加到知识库...")
                     await LibraryService.attach_assets_to_kb(
                         db,
                         auto_attach_kb_id,
@@ -385,20 +490,21 @@ class CrawlService:
                         extract_graph=extract_graph,
                     )
 
-                await CrawlService._set_job_state(
-                    db,
-                    job,
-                    status="done",
-                    progress=100,
+                await CrawlService._update_stage(
+                    db, job, stage="save", progress=100,
                     message="采集完成，已保存到文件管理",
-                    file_count=1,
-                    finished=True,
+                    status="done", finished=True,
+                    stage_extra={"file_count": 1},
                 )
+                job.file_count = 1
+                await db.commit()
+                await CrawlService._append_log(db, job, "info", f"采集全部完成")
+
             except Exception as exc:
-                await CrawlService._set_job_state(
-                    db,
-                    job,
-                    status="failed",
-                    message=f"采集失败：{exc}",
-                    finished=True,
+                logger.exception("[crawl:%s] 采集失败", job_id)
+                await CrawlService._update_stage(
+                    db, job, stage=job.detail and _parse_json_field(job.detail, {}).get("stage", "search"),
+                    progress=job.progress, message=f"采集失败：{exc}",
+                    status="failed", finished=True,
                 )
+                await CrawlService._append_log(db, job, "error", f"采集失败：{exc}")

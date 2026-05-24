@@ -67,6 +67,9 @@ const previewMode = ref('preview')
 const previewDraft = ref('')
 const previewSaving = ref(false)
 
+// 来源详情弹窗
+const sourceDetailAsset = ref(null)
+
 let crawlTimer = null
 
 const confirmDialogType = ref('warning')
@@ -121,6 +124,51 @@ function fmtSize(value = 0) {
 
 function sourceLabel(source) {
   return { upload: '上传', kb_upload: '知识库上传', crawl: '网络采集', legacy: '历史文件' }[source] || source || '未知'
+}
+
+function openSourceDetail(asset) {
+  sourceDetailAsset.value = asset
+}
+
+function closeSourceDetail() {
+  sourceDetailAsset.value = null
+}
+
+const CRAWL_STAGE_META = [
+  { key: 'search', label: '搜索' },
+  { key: 'fetch', label: '抓取' },
+  { key: 'llm', label: '整理' },
+  { key: 'save', label: '保存' },
+]
+
+const crawlStages = computed(() => {
+  const stages = crawlJob.value?.detail?.stages
+  if (!stages) return []
+  return CRAWL_STAGE_META.map(m => {
+    const s = stages[m.key] || {}
+    return { key: m.key, label: m.label, progress: s.progress || 0, elapsed_ms: s.elapsed_ms || 0, started_at: s.started_at }
+  })
+})
+
+function stageIcon(s) {
+  if (s.progress >= 100) return '✓'
+  if (s.progress > 0) return '●'
+  return '○'
+}
+
+function stageIconClass(s) {
+  if (s.progress >= 100) return 'done'
+  if (s.progress > 0) return 'active'
+  return 'pending'
+}
+
+function fmtElapsed(ms) {
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
+function fmtLogTime(iso) {
+  try { return new Date(iso).toLocaleTimeString() } catch { return '' }
 }
 
 function isEditableTextAsset(asset) {
@@ -471,7 +519,7 @@ function startCrawlPolling() {
     try {
       const job = await getCrawlJob(crawlJob.value.id)
       crawlJob.value = job
-      if (job.status === 'completed' || job.status === 'failed') {
+      if (job.status === 'done' || job.status === 'failed') {
         clearInterval(crawlTimer)
         crawlTimer = null
         await loadAssets()
@@ -591,13 +639,37 @@ onUnmounted(() => {
               分析维度：越高分析越详细，内容越多
             </span>
           </div>
-          <div v-if="crawlJob" class="crawl-status">
-            <span class="status-dot" :class="crawlJob.status === 'running' ? 'running' : (crawlJob.status === 'completed' ? 'done' : 'failed')"></span>
-            <span>{{ crawlJob.keyword }} · {{ crawlJob.status === 'running' ? '采集中' : (crawlJob.status === 'completed' ? '完成' : '失败') }}</span>
-            <span v-if="crawlJob.status === 'running' && crawlJob.progress != null">{{ crawlJob.progress }}%</span>
-            <div v-if="crawlJob.status === 'running' && crawlJob.progress != null" class="crawl-progress">
-              <div :style="{ width: `${crawlJob.progress}%` }"></div>
+          <div v-if="crawlJob" class="crawl-detail">
+            <div class="crawl-detail-head">
+              <span class="status-dot" :class="crawlJob.status === 'running' ? 'running' : (crawlJob.status === 'done' ? 'done' : 'failed')"></span>
+              <span class="crawl-title">{{ crawlJob.keyword }}</span>
+              <span class="crawl-state-label">{{ crawlJob.status === 'running' ? '采集中' : (crawlJob.status === 'done' ? '完成' : '失败') }}</span>
+              <span v-if="crawlJob.progress != null" class="crawl-pct">{{ crawlJob.progress }}%</span>
             </div>
+            <div class="crawl-progress-bar">
+              <div :style="{ width: `${crawlJob.progress || 0}%` }"></div>
+            </div>
+            <div v-if="crawlJob.detail?.stages" class="crawl-stages">
+              <div v-for="s in crawlStages" :key="s.key" class="crawl-stage-row">
+                <span class="crawl-stage-icon" :class="stageIconClass(s)">{{ stageIcon(s) }}</span>
+                <span class="crawl-stage-name">{{ s.label }}</span>
+                <span class="crawl-stage-pct">{{ s.progress }}%</span>
+                <div class="crawl-stage-bar">
+                  <div :style="{ width: `${s.progress}%` }"></div>
+                </div>
+                <span v-if="s.elapsed_ms" class="crawl-stage-time">{{ fmtElapsed(s.elapsed_ms) }}</span>
+              </div>
+            </div>
+            <details v-if="crawlJob.logs && crawlJob.logs.length" class="crawl-logs" open>
+              <summary class="crawl-logs-toggle">日志 ({{ crawlJob.logs.length }})</summary>
+              <div class="crawl-logs-body">
+                <div v-for="(log, i) in crawlJob.logs" :key="i" class="crawl-log-line">
+                  <span class="cl-time">[{{ fmtLogTime(log.time) }}]</span>
+                  <span class="cl-level" :class="`cl-${log.level}`">{{ log.level === 'error' ? 'ERR' : log.level === 'warning' ? 'WRN' : 'INF' }}</span>
+                  <span class="cl-msg">{{ log.message }}</span>
+                </div>
+              </div>
+            </details>
             <div v-if="crawlJob.status === 'failed' && crawlJob.message" class="crawl-error">
               {{ crawlJob.message }}
             </div>
@@ -646,9 +718,10 @@ onUnmounted(() => {
                 </div>
                 <div class="asset-summary" v-if="asset.summary">{{ asset.summary }}</div>
               </div>
-              <div class="asset-source">
+              <div class="asset-source" :class="{ clickable: asset.sources && asset.sources.length }" @click="asset.sources && asset.sources.length && openSourceDetail(asset)">
                 <span class="source-chip">{{ sourceLabel(asset.source_type) }}</span>
-                <a v-if="asset.source_url" :href="asset.source_url" target="_blank" rel="noreferrer">来源</a>
+                <a v-if="asset.source_url && !(asset.sources && asset.sources.length)" :href="asset.source_url" target="_blank" rel="noreferrer">来源</a>
+                <span v-if="asset.sources && asset.sources.length" class="source-count">{{ asset.sources.length }} 个来源</span>
               </div>
               <div class="asset-kb">
                 <template v-if="asset.kb_names && asset.kb_names.length">
@@ -738,6 +811,29 @@ onUnmounted(() => {
             v-html="renderMarkdown(previewText || '当前 Markdown 内容为空')"
           ></div>
           <pre v-else class="preview-text">{{ previewText || '当前格式暂不支持文本预览' }}</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- 来源详情弹窗 -->
+    <div class="modal-mask" v-if="sourceDetailAsset" @click.self="closeSourceDetail">
+      <div class="source-detail-modal" @click.stop>
+        <div class="preview-head">
+          <div>
+            <div class="preview-title">{{ sourceDetailAsset.name }}</div>
+            <div class="preview-sub">{{ sourceLabel(sourceDetailAsset.source_type) }} · {{ sourceDetailAsset.sources.length }} 个来源</div>
+          </div>
+          <div class="preview-actions">
+            <button class="icon-btn" @click="closeSourceDetail">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="source-detail-body">
+          <a v-for="(s, i) in sourceDetailAsset.sources" :key="i" :href="s.url" target="_blank" rel="noreferrer" class="source-item">
+            <span class="source-item-title">{{ s.title || s.url }}</span>
+            <span class="source-item-url">{{ s.url }}</span>
+          </a>
         </div>
       </div>
     </div>
@@ -886,14 +982,39 @@ onUnmounted(() => {
 .crawl-btn { padding: 8px 16px !important; gap: 6px; }
 .crawl-hint { display: flex; gap: 16px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--c-border); }
 .hint-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--c-secondary); }
-.crawl-status { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; margin-top: 10px; color: var(--c-secondary); font-size: 12px; }
-.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c-secondary); }
+.crawl-detail { margin-top: 10px; padding: 10px 14px; background: var(--c-muted); border-radius: 8px; font-size: 12px; }
+.crawl-detail-head { display: flex; align-items: center; gap: 8px; color: var(--c-secondary); }
+.crawl-title { font-weight: 600; color: var(--c-text); }
+.crawl-state-label { color: var(--c-secondary); }
+.crawl-pct { font-weight: 700; color: var(--c-text); margin-left: auto; }
+.crawl-progress-bar { height: 4px; background: var(--c-border); border-radius: 999px; overflow: hidden; margin: 8px 0; }
+.crawl-progress-bar div { height: 100%; background: var(--c-fg); transition: width 220ms ease; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c-secondary); flex-shrink: 0; }
 .status-dot.running { background: #22c55e; box-shadow: 0 0 12px rgba(34, 197, 94, 0.5); }
 .status-dot.done { background: var(--c-success); }
 .status-dot.failed { background: var(--c-danger); }
-.crawl-progress { grid-column: 1 / -1; height: 4px; background: var(--c-muted); border-radius: 999px; overflow: hidden; }
-.crawl-progress div { height: 100%; background: var(--c-fg); transition: width 220ms ease; }
-.crawl-error { grid-column: 2 / -1; margin-top: 4px; padding: 8px 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px; color: #ef4444; font-size: 12px; }
+.crawl-stages { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.crawl-stage-row { display: grid; grid-template-columns: 18px 36px 36px 1fr auto; gap: 6px; align-items: center; }
+.crawl-stage-icon { font-size: 11px; text-align: center; }
+.crawl-stage-icon.done { color: var(--c-success); }
+.crawl-stage-icon.active { color: #22c55e; }
+.crawl-stage-icon.pending { color: var(--c-secondary); opacity: 0.5; }
+.crawl-stage-name { color: var(--c-text); font-weight: 600; }
+.crawl-stage-pct { color: var(--c-secondary); text-align: right; }
+.crawl-stage-bar { height: 3px; background: var(--c-border); border-radius: 999px; overflow: hidden; }
+.crawl-stage-bar div { height: 100%; background: var(--c-fg); transition: width 220ms ease; }
+.crawl-stage-time { color: var(--c-secondary); font-size: 11px; white-space: nowrap; }
+.crawl-logs { margin-top: 8px; }
+.crawl-logs-toggle { cursor: pointer; font-weight: 600; color: var(--c-secondary); font-size: 11px; padding: 4px 0; }
+.crawl-logs-body { margin-top: 4px; max-height: 160px; overflow-y: auto; font-family: monospace; font-size: 11px; background: var(--c-bg); border-radius: 6px; padding: 8px; }
+.crawl-log-line { display: flex; gap: 6px; padding: 1px 0; line-height: 1.5; }
+.cl-time { color: var(--c-secondary); white-space: nowrap; }
+.cl-level { font-weight: 700; min-width: 28px; }
+.cl-level.cl-error { color: #ef4444; }
+.cl-level.cl-warning { color: #f59e0b; }
+.cl-level.cl-info { color: var(--c-secondary); }
+.cl-msg { color: var(--c-text); word-break: break-word; }
+.crawl-error { margin-top: 6px; padding: 8px 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px; color: #ef4444; }
 .attach-bar { display: flex; gap: 10px; align-items: center; }
 .attach-bar span { flex: 1; font-size: 13px; font-weight: 600; }
 .attach-bar select { min-width: 180px; padding: 7px 10px; border: 1px solid var(--c-border); border-radius: 6px; }
@@ -913,12 +1034,21 @@ onUnmounted(() => {
 .asset-meta { display: flex; gap: 8px; color: var(--c-secondary); font-size: 11px; margin-top: 2px; }
 .asset-summary { color: var(--c-secondary); font-size: 12px; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .asset-source { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.asset-source.clickable { cursor: pointer; }
+.asset-source.clickable:hover { opacity: 0.8; }
 .source-chip { padding: 2px 7px; border-radius: 999px; background: var(--c-muted); color: var(--c-secondary); font-weight: 600; }
 .asset-source a { color: var(--c-accent); text-decoration: none; }
+.source-count { color: var(--c-accent); font-weight: 600; }
 .asset-kb { display: flex; flex-wrap: wrap; gap: 4px; }
 .kb-tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; background: var(--c-muted); color: var(--c-text); white-space: nowrap; }
 .kb-none { font-size: 13px; color: var(--c-secondary); }
 .asset-actions { display: flex; gap: 4px; }
+.source-detail-modal { width: min(560px, 90vw); max-height: 70vh; background: var(--c-panel); border: 1px solid var(--c-border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+.source-detail-body { padding: 12px 16px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.source-item { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 8px; background: var(--c-muted); text-decoration: none; transition: background 0.15s; }
+.source-item:hover { background: var(--c-border); }
+.source-item-title { font-size: 13px; font-weight: 600; color: var(--c-text); word-break: break-word; }
+.source-item-url { font-size: 11px; color: var(--c-secondary); word-break: break-all; }
 
 .modal-mask { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; background: var(--c-overlay); padding: 24px; }
 .modal { background: var(--c-panel); border: 1px solid var(--c-border); border-radius: 12px; padding: 24px; max-width: 420px; width: 100%; }

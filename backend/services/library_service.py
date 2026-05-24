@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import uuid
 from datetime import datetime
@@ -37,6 +38,12 @@ def _asset_to_dict(asset: FileAsset) -> dict:
         if f.kb and f.kb.name not in seen:
             seen.add(f.kb.name)
             kb_names.append(f.kb.name)
+    sources: list[dict] = []
+    if asset.sources:
+        try:
+            sources = json.loads(asset.sources)
+        except (json.JSONDecodeError, TypeError):
+            pass
     return {
         "id": asset.id,
         "directory_id": asset.directory_id,
@@ -48,6 +55,7 @@ def _asset_to_dict(asset: FileAsset) -> dict:
         "source_type": asset.source_type,
         "source_url": asset.source_url,
         "source_keyword": asset.source_keyword,
+        "sources": sources,
         "summary": asset.summary,
         "status": asset.status,
         "message": asset.message,
@@ -209,6 +217,7 @@ class LibraryService:
         source_type: str = "upload",
         source_url: str | None = None,
         source_keyword: str | None = None,
+        sources: list[dict] | None = None,
         summary: str | None = None,
         status: str = "ready",
         move: bool = False,
@@ -234,6 +243,7 @@ class LibraryService:
             source_type=source_type,
             source_url=source_url,
             source_keyword=source_keyword,
+            sources=json.dumps(sources, ensure_ascii=False) if sources else None,
             summary=summary,
             status=status,
             updated_at=_now_iso(),
