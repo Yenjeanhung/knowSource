@@ -51,12 +51,13 @@ def _asset_to_dict(asset: FileAsset, kb_file_count: int | None = None) -> dict:
     }
 
 
-def _directory_to_dict(directory: FileDirectory) -> dict:
+def _directory_to_dict(directory: FileDirectory, file_count: int = 0) -> dict:
     return {
         "id": directory.id,
         "name": directory.name,
         "parent_id": directory.parent_id,
         "created_at": directory.created_at,
+        "file_count": file_count,
     }
 
 
@@ -102,9 +103,38 @@ class LibraryService:
         return await LibraryService.ensure_directory_path(db, ["网络采集", safe_keyword, day])
 
     @staticmethod
+    async def _calculate_directory_file_count(db: AsyncSession, directory_id: str | None, all_directories: list[FileDirectory], all_assets: list[FileAsset]) -> int:
+        """递归计算目录及其所有子目录下的文件总数"""
+        count = 0
+        
+        # 计算当前目录下的文件数
+        for asset in all_assets:
+            if asset.directory_id == directory_id:
+                count += 1
+        
+        # 递归计算子目录的文件数
+        for child_dir in all_directories:
+            if child_dir.parent_id == directory_id:
+                count += await LibraryService._calculate_directory_file_count(db, child_dir.id, all_directories, all_assets)
+        
+        return count
+
+    @staticmethod
     async def list_directories(db: AsyncSession) -> list[dict]:
-        result = await db.execute(select(FileDirectory).order_by(FileDirectory.created_at.asc()))
-        return [_directory_to_dict(item) for item in result.scalars().all()]
+        # 先查询所有目录和所有文件
+        dir_result = await db.execute(select(FileDirectory).order_by(FileDirectory.created_at.asc()))
+        all_directories = list(dir_result.scalars().all())
+        
+        asset_result = await db.execute(select(FileAsset))
+        all_assets = list(asset_result.scalars().all())
+        
+        # 为每个目录计算文件数量
+        result = []
+        for directory in all_directories:
+            file_count = await LibraryService._calculate_directory_file_count(db, directory.id, all_directories, all_assets)
+            result.append(_directory_to_dict(directory, file_count))
+        
+        return result
 
     @staticmethod
     async def create_directory(db: AsyncSession, name: str, parent_id: str | None = None) -> dict:

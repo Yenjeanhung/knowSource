@@ -53,9 +53,12 @@ function handleDelete() {
       </button>
       <span v-else class="expand-placeholder"></span>
       
-      <svg class="item-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-      </svg>
+      <div class="icon-wrapper">
+        <svg class="item-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        <span v-if="(node.file_count || 0) > 0" class="file-badge">{{ node.file_count }}</span>
+      </div>
       
       <span class="item-name">{{ node.name }}</span>
       
@@ -178,15 +181,39 @@ function handleDelete() {
   flex-shrink: 0;
 }
 
-.item-icon {
+.icon-wrapper {
+  position: relative;
   width: 16px;
   height: 16px;
   flex-shrink: 0;
+}
+
+.item-icon {
+  width: 16px;
+  height: 16px;
   color: #f59e0b;
 }
 
+.file-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  background-color: #374151;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  border: 1px solid #4b5563;
+}
+
 .item-name {
-  flex: 1;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;

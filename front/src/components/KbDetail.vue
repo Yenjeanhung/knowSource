@@ -2089,6 +2089,12 @@ h1 { font-size: 18px; font-weight: 700; }
   text-overflow: ellipsis;
 }
 
+.file-count {
+  color: var(--c-muted);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
 .expand-btn {
   background: none;
   border: none;
