@@ -1,7 +1,17 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { getKb, deleteFile as apiDeleteFile, uploadChunk, processFile, reprocessFile, getFileStatus, cancelProcessing } from '../api'
+import {
+  attachAssetsToKb,
+  fetchAssets,
+  getKb,
+  deleteFile as apiDeleteFile,
+  uploadChunk,
+  processFile,
+  reprocessFile,
+  getFileStatus,
+  cancelProcessing,
+} from '../api'
 
 const CHUNK_SIZE = 512 * 1024
 const uuid = () => ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(
@@ -50,6 +60,10 @@ const showProcessDialog = ref(false)
 const pendingFileId = ref('')
 const pendingFileName = ref('')
 const pendingProcessMode = ref('process')
+const showAssetPicker = ref(false)
+const assetPickerSearch = ref('')
+const assetOptions = ref([])
+const selectedAssetIds = ref(new Set())
 
 // Confirm dialog state
 const showConfirmDialog = ref(false)
@@ -96,6 +110,41 @@ function fmtSize(value) {
 function triggerUpload() {
   const el = document.getElementById('fileInput')
   if (el) el.click()
+}
+
+async function openAssetPicker() {
+  showAssetPicker.value = true
+  selectedAssetIds.value = new Set()
+  await loadAssetOptions()
+}
+
+async function loadAssetOptions() {
+  try {
+    const items = await fetchAssets({ q: assetPickerSearch.value })
+    const attachedAssetIds = new Set(files.value.map(item => item.asset_id).filter(Boolean))
+    assetOptions.value = items.filter(item => item.status === 'ready' && !attachedAssetIds.has(item.id))
+  } catch {
+    assetOptions.value = []
+  }
+}
+
+function toggleAssetPick(assetId) {
+  const next = new Set(selectedAssetIds.value)
+  if (next.has(assetId)) next.delete(assetId)
+  else next.add(assetId)
+  selectedAssetIds.value = next
+}
+
+async function confirmAttachAssets() {
+  if (!selectedAssetIds.value.size) return
+  try {
+    await attachAssetsToKb(props.kbId, [...selectedAssetIds.value])
+    kb.value = await getKb(props.kbId)
+    files.value = (kb.value.files || []).map(normalizeFile)
+    showAssetPicker.value = false
+  } catch {
+    window.alert('加入文件失败')
+  }
 }
 
 async function handleFileDrop(event) {
@@ -527,6 +576,17 @@ function stageIconClass(file, stageName) {
       <input id="fileInput" type="file" multiple accept=".txt,.pdf,.md,.csv,.json,.docx,.html" @change="handleFilePick" style="display:none">
     </div>
 
+    <div class="source-actions">
+      <button class="source-btn" @click="openAssetPicker">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3.75 7.25A2.25 2.25 0 0 1 6 5h4.25c.57 0 1.12.22 1.54.62l1.14 1.1c.42.4.97.63 1.55.63H18A2.25 2.25 0 0 1 20.25 9.6v7.15A2.25 2.25 0 0 1 18 19H6a2.25 2.25 0 0 1-2.25-2.25Z" />
+          <path d="M3.75 9.25h16.5" />
+        </svg>
+        从文件管理选择
+      </button>
+      <span>知识库直接上传的文件会自动进入文件管理的默认目录。</span>
+    </div>
+
     <div class="sec-head">
       <span class="sec-title">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -802,6 +862,52 @@ function stageIconClass(file, stageName) {
           </div>
         </div>
       </div>
+
+      <div class="dialog-overlay" v-if="showAssetPicker" @click.self="showAssetPicker = false">
+        <div class="dialog-card asset-picker-card">
+          <div class="dialog-head">
+            <div class="dialog-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M3.75 7.25A2.25 2.25 0 0 1 6 5h4.25c.57 0 1.12.22 1.54.62l1.14 1.1c.42.4.97.63 1.55.63H18A2.25 2.25 0 0 1 20.25 9.6v7.15A2.25 2.25 0 0 1 18 19H6a2.25 2.25 0 0 1-2.25-2.25Z" />
+                <path d="M3.75 9.25h16.5" />
+              </svg>
+            </div>
+            <div>
+              <div class="dialog-title">从文件管理选择</div>
+              <div class="dialog-sub">选择后会加入当前知识库，等待处理</div>
+            </div>
+          </div>
+          <div class="asset-picker-tools">
+            <input v-model="assetPickerSearch" type="text" placeholder="搜索文件..." @keydown.enter="loadAssetOptions">
+            <button class="proc-btn" @click="loadAssetOptions">搜索</button>
+          </div>
+          <div class="asset-picker-list" v-if="assetOptions.length">
+            <button
+              v-for="asset in assetOptions"
+              :key="asset.id"
+              class="asset-option"
+              :class="{ selected: selectedAssetIds.has(asset.id) }"
+              @click="toggleAssetPick(asset.id)"
+            >
+              <span class="asset-check">{{ selectedAssetIds.has(asset.id) ? '✓' : '' }}</span>
+              <span class="asset-option-body">
+                <strong>{{ asset.name }}</strong>
+                <small>{{ fmtSize(asset.size) }} · {{ asset.source_type }}</small>
+              </span>
+            </button>
+          </div>
+          <div class="empty-state" v-else>
+            <div class="empty-title">没有可选择的文件</div>
+            <div class="empty-desc">可先到文件管理上传或采集资料</div>
+          </div>
+          <div class="asset-picker-actions">
+            <button class="confirm-btn cancel" @click="showAssetPicker = false">取消</button>
+            <button class="confirm-btn ok" :disabled="!selectedAssetIds.size" @click="confirmAttachAssets">
+              加入 {{ selectedAssetIds.size || '' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </Teleport>
   </div>
 </template>
@@ -827,6 +933,33 @@ h1 { font-size: 18px; font-weight: 700; }
 .dz-icon { color: var(--c-secondary); margin-bottom: 8px; }
 .dz-title { font-size: 14px; font-weight: 600; }
 .dz-hint { font-size: 12px; color: var(--c-secondary); margin-top: 4px; }
+
+.source-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -8px 0 20px;
+  color: var(--c-secondary);
+  font-size: 12px;
+}
+
+.source-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  background: var(--c-panel);
+  color: var(--c-fg);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.source-btn:hover {
+  background: var(--c-muted);
+}
 
 .sec-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .sec-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--c-secondary); text-transform: uppercase; letter-spacing: 0.5px; flex: 1; }
@@ -1537,5 +1670,79 @@ h1 { font-size: 18px; font-weight: 700; }
 
 .confirm-btn.ok:hover {
   background: #dc2626;
+}
+
+.asset-picker-card {
+  width: 560px;
+}
+
+.asset-picker-tools {
+  display: flex;
+  gap: 8px;
+  padding: 14px 18px 0;
+}
+
+.asset-picker-list {
+  padding: 14px 18px;
+  max-height: 360px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.asset-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-muted);
+  color: var(--c-fg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.asset-option.selected {
+  border-color: #6366f1;
+  background: rgba(99,102,241,0.08);
+}
+
+.asset-check {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.asset-option-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.asset-option-body strong {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.asset-option-body small {
+  color: var(--c-secondary);
+  margin-top: 2px;
+}
+
+.asset-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 18px 18px;
 }
 </style>

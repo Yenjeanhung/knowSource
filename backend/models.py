@@ -22,10 +22,48 @@ class KnowledgeBase(Base):
     files = relationship("File", back_populates="kb", cascade="all, delete-orphan")
 
 
+class FileDirectory(Base):
+    __tablename__ = "file_directories"
+
+    id = Column(String, primary_key=True, default=lambda: uuid.uuid4().hex[:12])
+    name = Column(String, nullable=False)
+    parent_id = Column(String, ForeignKey("file_directories.id", ondelete="CASCADE"), nullable=True)
+    created_at = Column(String, default=lambda: datetime.now().isoformat())
+
+    parent = relationship("FileDirectory", remote_side=[id], back_populates="children")
+    children = relationship("FileDirectory", back_populates="parent", cascade="all, delete-orphan")
+    assets = relationship("FileAsset", back_populates="directory")
+
+
+class FileAsset(Base):
+    __tablename__ = "file_assets"
+
+    id = Column(String, primary_key=True, default=lambda: uuid.uuid4().hex[:12])
+    directory_id = Column(String, ForeignKey("file_directories.id", ondelete="SET NULL"), nullable=True)
+    name = Column(String, nullable=False)
+    size = Column(Integer, nullable=False, default=0)
+    ext = Column(String, default="")
+    mime_type = Column(String, default="")
+    sha256 = Column(String, default="")
+    path = Column(String, nullable=True)
+    source_type = Column(String, default="upload")
+    source_url = Column(String, nullable=True)
+    source_keyword = Column(String, nullable=True)
+    summary = Column(Text, nullable=True)
+    status = Column(String, default="ready")
+    message = Column(String, nullable=True)
+    created_at = Column(String, default=lambda: datetime.now().isoformat())
+    updated_at = Column(String, default=lambda: datetime.now().isoformat())
+
+    directory = relationship("FileDirectory", back_populates="assets")
+    kb_files = relationship("File", back_populates="asset")
+
+
 class File(Base):
     __tablename__ = "files"
 
     id = Column(String, primary_key=True)
+    asset_id = Column(String, ForeignKey("file_assets.id", ondelete="SET NULL"), nullable=True)
     kb_id = Column(String, ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False)
     name = Column(String, nullable=False)
     size = Column(Integer, nullable=False)
@@ -39,6 +77,7 @@ class File(Base):
     created_at = Column(String, default=lambda: datetime.now().isoformat())
 
     kb = relationship("KnowledgeBase", back_populates="files")
+    asset = relationship("FileAsset", back_populates="kb_files")
     chunks = relationship("Chunk", back_populates="file", cascade="all, delete-orphan")
 
 
@@ -53,3 +92,18 @@ class Chunk(Base):
     created_at = Column(String, default=lambda: datetime.now().isoformat())
 
     file = relationship("File", back_populates="chunks")
+
+
+class CrawlJob(Base):
+    __tablename__ = "crawl_jobs"
+
+    id = Column(String, primary_key=True, default=lambda: uuid.uuid4().hex[:12])
+    keyword = Column(String, nullable=False)
+    directory_id = Column(String, ForeignKey("file_directories.id", ondelete="SET NULL"), nullable=True)
+    status = Column(String, default="queued")
+    progress = Column(Integer, default=0)
+    message = Column(String, nullable=True)
+    urls = Column(Text, nullable=True)
+    file_count = Column(Integer, default=0)
+    created_at = Column(String, default=lambda: datetime.now().isoformat())
+    finished_at = Column(String, nullable=True)

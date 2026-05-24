@@ -9,7 +9,8 @@ const THEME_STORAGE_KEY = 'knowsource.theme'
 const theme = ref('dark')
 
 const menuItems = computed(() => [
-  { to: '/', label: '知识库', exact: true, hint: '知识库' },
+  { to: '/files', label: '文件', exact: false, hint: '文件管理' },
+  { to: '/kb', label: '知识库', exact: false, hint: '知识库' },
   { to: '/query', label: '问答', exact: false, hint: '问答' },
   { to: '/vectors', label: '向量', exact: false, hint: '向量' },
   { to: '/graph', label: '图谱', exact: false, hint: '图谱' },
@@ -123,7 +124,7 @@ onMounted(() => {
         >
           <span class="side-icon-wrap" aria-hidden="true">
             <svg
-              v-if="item.to === '/'"
+              v-if="item.to === '/files'"
               width="22"
               height="22"
               viewBox="0 0 24 24"
@@ -135,6 +136,22 @@ onMounted(() => {
             >
               <path d="M3.75 7.25A2.25 2.25 0 0 1 6 5h4.25c.57 0 1.12.22 1.54.62l1.14 1.1c.42.4.97.63 1.55.63H18A2.25 2.25 0 0 1 20.25 9.6v7.15A2.25 2.25 0 0 1 18 19H6a2.25 2.25 0 0 1-2.25-2.25Z" />
               <path d="M3.75 9.25h16.5" />
+            </svg>
+            <svg
+              v-else-if="item.to === '/kb'"
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M4.25 6.75A2.5 2.5 0 0 1 6.75 4.25h10.5a2.5 2.5 0 0 1 2.5 2.5v10.5a2.5 2.5 0 0 1-2.5 2.5H6.75a2.5 2.5 0 0 1-2.5-2.5Z" />
+              <path d="M8 8.75h8" />
+              <path d="M8 12h8" />
+              <path d="M8 15.25h5" />
             </svg>
             <svg
               v-else-if="item.to === '/query'"
@@ -192,7 +209,7 @@ onMounted(() => {
         </router-link>
       </nav>
 
-      <div class="side-brand" @click="router.push('/')">
+      <div class="side-brand" @click="router.push('/files')">
         <span class="side-icon-wrap brand-icon" aria-hidden="true">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2.75 18.5 8.25 12 21.25 5.5 8.25 12 2.75Z" />

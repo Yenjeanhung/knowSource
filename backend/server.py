@@ -120,10 +120,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from routers import files, graph, kb, query, vector_data
+from routers import files, graph, kb, library, query, vector_data
 
 app.include_router(kb.router, prefix="/api")
 app.include_router(files.router, prefix="/api")
+app.include_router(library.router, prefix="/api")
 app.include_router(graph.router, prefix="/api")
 app.include_router(query.router, prefix="/api")
 app.include_router(vector_data.router, prefix="/api")

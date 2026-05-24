@@ -61,6 +61,15 @@ class Settings(BaseSettings):
     CHUNK_DIR: str
     MAX_FILE_SIZE: int
 
+    # 文件管理与联网采集
+    DEFAULT_KB_UPLOAD_DIR: str = "知识库上传"
+    CRAWL_ENABLED: bool = True
+    CRAWL_MAX_PAGES: int = 5
+    CRAWL_TIMEOUT_SECONDS: int = 15
+    CRAWL_RATE_LIMIT_SECONDS: float = 1.0
+    CRAWL_LLM_FILTER: bool = True
+    CRAWL_SAVE_RAW_HTML: bool = False
+
     class Config:
         env_file = ".env"
 

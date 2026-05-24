@@ -58,6 +58,7 @@ class KBService:
         files = [
             {
                 "id": file.id,
+                "asset_id": file.asset_id,
                 "name": file.name,
                 "size": file.size,
                 "status": file.status,

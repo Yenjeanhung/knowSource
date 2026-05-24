@@ -176,3 +176,106 @@ export async function uploadChunk({ fileId, fileName, fileSize, kbId, chunkIndex
   if (!res.ok) throw new Error('Upload failed')
   return res.json()
 }
+
+export async function fetchDirectories() {
+  return (await (await fetch(`${API}/api/file-directories`)).json()) || []
+}
+
+export async function createDirectory({ name, parentId = null }) {
+  const res = await fetch(`${API}/api/file-directories`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, parent_id: parentId }),
+  })
+  if (!res.ok) throw new Error('Create directory failed')
+  return res.json()
+}
+
+export async function deleteDirectory(directoryId) {
+  const res = await fetch(`${API}/api/file-directories/${directoryId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Delete directory failed')
+  return res.json()
+}
+
+export async function fetchAssets({ directoryId = '', q = '' } = {}) {
+  const params = new URLSearchParams()
+  if (directoryId) params.set('directory_id', directoryId)
+  if (q) params.set('q', q)
+  const res = await fetch(`${API}/api/assets?${params.toString()}`)
+  if (!res.ok) throw new Error('Fetch assets failed')
+  return res.json()
+}
+
+export async function uploadAssetChunk({ assetId, fileName, fileSize, directoryId, chunkIndex, totalChunks, chunk }) {
+  const form = new FormData()
+  form.append('asset_id', assetId)
+  form.append('file_name', fileName)
+  form.append('file_size', fileSize)
+  if (directoryId) form.append('directory_id', directoryId)
+  form.append('chunk_index', chunkIndex)
+  form.append('total_chunks', totalChunks)
+  form.append('chunk', chunk)
+  const res = await fetch(`${API}/api/assets/upload/chunk`, { method: 'POST', body: form })
+  if (!res.ok) throw new Error('Asset upload failed')
+  return res.json()
+}
+
+export async function deleteAsset(assetId) {
+  const res = await fetch(`${API}/api/assets/${assetId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Delete asset failed')
+  return res.json()
+}
+
+export async function attachAssetsToKb(kbId, assetIds, { autoProcess = false, extractGraph = true } = {}) {
+  const res = await fetch(`${API}/api/kb/${kbId}/assets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      asset_ids: assetIds,
+      auto_process: autoProcess,
+      extract_graph: extractGraph,
+    }),
+  })
+  if (!res.ok) throw new Error('Attach assets failed')
+  return res.json()
+}
+
+export async function createCrawlJob({
+  keyword,
+  directoryId = null,
+  maxPages = null,
+  autoAttachKbId = null,
+  autoProcess = false,
+  extractGraph = true,
+}) {
+  const res = await fetch(`${API}/api/crawl-jobs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      keyword,
+      directory_id: directoryId,
+      max_pages: maxPages,
+      auto_attach_kb_id: autoAttachKbId,
+      auto_process: autoProcess,
+      extract_graph: extractGraph,
+    }),
+  })
+  if (!res.ok) throw new Error('Create crawl job failed')
+  return res.json()
+}
+
+export async function getCrawlJob(jobId) {
+  const res = await fetch(`${API}/api/crawl-jobs/${jobId}`)
+  if (!res.ok) throw new Error('Fetch crawl job failed')
+  return res.json()
+}
+
+export function getAssetPreviewUrl(assetId) {
+  return `${API}/api/assets/${assetId}/preview`
+}
+
+export async function fetchAssetContent(assetId) {
+  const res = await fetch(`${API}/api/assets/${assetId}/preview`)
+  if (!res.ok) throw new Error('Preview failed')
+  return res.text()
+}

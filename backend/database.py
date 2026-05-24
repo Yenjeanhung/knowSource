@@ -16,6 +16,7 @@ async def init_db():
     """Create data directories, tables, and lightweight SQLite migrations."""
     Path("./data").mkdir(exist_ok=True)
     Path(settings.UPLOAD_DIR).mkdir(exist_ok=True)
+    (Path(settings.UPLOAD_DIR) / "_assets").mkdir(parents=True, exist_ok=True)
     Path(settings.CHUNK_DIR).mkdir(exist_ok=True)
     Path(settings.KUZU_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
 
@@ -33,6 +34,8 @@ async def init_db():
             await conn.execute(text("ALTER TABLE files ADD COLUMN logs TEXT DEFAULT NULL"))
         if "path" not in columns:
             await conn.execute(text("ALTER TABLE files ADD COLUMN path VARCHAR DEFAULT NULL"))
+        if "asset_id" not in columns:
+            await conn.execute(text("ALTER TABLE files ADD COLUMN asset_id VARCHAR DEFAULT NULL"))
 
 
 async def get_db() -> AsyncSession:

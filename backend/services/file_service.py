@@ -89,7 +89,7 @@ class FileService:
         except Exception:
             logger.exception("Graph delete failed: file_id=%s kb_id=%s", file.id, file.kb_id)
 
-        if remove_source_file and file.path:
+        if remove_source_file and file.path and not file.asset_id:
             file_path = Path(file.path)
             if file_path.exists():
                 file_path.unlink()
@@ -315,7 +315,7 @@ class FileService:
     async def _reassemble(file_id: str, file: File, db: AsyncSession):
         kb_dir = UPLOAD_DIR / file.kb_id
         kb_dir.mkdir(exist_ok=True)
-        target_path = kb_dir / file.name
+        target_path = kb_dir / f"{file_id}{Path(file.name).suffix.lower()}"
 
         chunk_files = sorted(CHUNK_DIR.glob(f"{file_id}_*"))
         logger.info(
@@ -331,7 +331,19 @@ class FileService:
                     out.write(chunk_in.read())
                 chunk_path.unlink()
 
-        file.path = str(target_path)
+        from services.library_service import LibraryService
+
+        directory = await LibraryService.default_kb_directory(db, file.kb_id)
+        asset = await LibraryService.create_asset_from_path(
+            db,
+            target_path,
+            name=file.name,
+            directory_id=directory.id,
+            source_type="kb_upload",
+            move=True,
+        )
+        file.asset_id = asset.id
+        file.path = asset.path
         await FileService._commit_runtime_state(
             db,
             file,
@@ -929,6 +941,7 @@ class FileService:
                 "id": file.id,
                 "name": file.name,
                 "size": file.size,
+                "asset_id": file.asset_id,
                 "kb_id": file.kb_id,
                 "status": file.status,
                 "progress": file.progress,
