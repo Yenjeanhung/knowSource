@@ -58,8 +58,12 @@ let confirmDialogCallback = null
 const crawlKeyword = ref('')
 const crawlMaxPages = ref(5)
 const crawlDepth = ref('medium')
-const crawlJob = ref(null)
+const crawlJobs = ref([])
+const crawlTimers = {}
+const showCrawlForm = ref(false)
 const crawlMaxLimit = ref(20)
+
+const activeCrawlJobs = computed(() => crawlJobs.value.filter(j => j.status === 'running' || j.status === 'queued'))
 
 // 预览相关
 const previewAsset = ref(null)
@@ -143,30 +147,13 @@ const CRAWL_STAGE_META = [
   { key: 'save', label: '保存' },
 ]
 
-const crawlStages = computed(() => {
-  const stages = crawlJob.value?.detail?.stages
+function getCrawlStages(job) {
+  const stages = job?.detail?.stages
   if (!stages) return []
   return CRAWL_STAGE_META.map(m => {
     const s = stages[m.key] || {}
     return { key: m.key, label: m.label, progress: s.progress || 0, elapsed_ms: s.elapsed_ms || 0, started_at: s.started_at }
   })
-})
-
-function stageIcon(s) {
-  if (s.progress >= 100) return '✓'
-  if (s.progress > 0) return '●'
-  return '○'
-}
-
-function stageIconClass(s) {
-  if (s.progress >= 100) return 'done'
-  if (s.progress > 0) return 'active'
-  return 'pending'
-}
-
-function fmtElapsed(ms) {
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(1)}s`
 }
 
 function fmtLogTime(iso) {
@@ -511,52 +498,56 @@ async function startCrawl() {
       maxPages: crawlMaxPages.value,
       analysisDepth: crawlDepth.value,
     })
-    crawlJob.value = job
-    startCrawlPolling()
+    crawlJobs.value = [...crawlJobs.value, job]
+    crawlKeyword.value = ''
+    showCrawlForm.value = false
+    watchCrawlJob(job.id)
   } catch {
     window.alert('创建采集任务失败')
   }
 }
 
-function startCrawlPolling() {
-  if (crawlTimer) clearInterval(crawlTimer)
-  crawlTimer = setInterval(async () => {
-    if (!crawlJob.value) return
+function watchCrawlJob(jobId) {
+  if (crawlTimers[jobId]) clearInterval(crawlTimers[jobId])
+  crawlTimers[jobId] = setInterval(async () => {
     try {
-      const job = await getCrawlJob(crawlJob.value.id)
-      crawlJob.value = job
+      const job = await getCrawlJob(jobId)
+      crawlJobs.value = crawlJobs.value.map(j => j.id === jobId ? job : j)
       if (job.status === 'done' || job.status === 'failed') {
-        clearInterval(crawlTimer)
-        crawlTimer = null
+        clearInterval(crawlTimers[jobId])
+        delete crawlTimers[jobId]
         await loadAssets()
+        // 完成后延迟移除，让用户看到最终状态
+        setTimeout(() => {
+          crawlJobs.value = crawlJobs.value.filter(j => j.id !== jobId)
+        }, 3000)
       }
-    } catch {}
+    } catch {
+      clearInterval(crawlTimers[jobId])
+      delete crawlTimers[jobId]
+    }
   }, 1500)
 }
 
-async function restoreCrawlJob() {
+async function restoreCrawlJobs() {
   try {
     const job = await getLatestCrawlJob()
-    if (!job) {
-      crawlJob.value = null
-      return
-    }
-    crawlJob.value = job
+    if (!job) return
     if (!job.finished_at && (job.status === 'running' || job.status === 'queued')) {
-      startCrawlPolling()
+      crawlJobs.value = [job]
+      watchCrawlJob(job.id)
     }
   } catch (e) {
     console.warn('恢复采集任务失败:', e)
-    crawlJob.value = null
   }
 }
 
 onMounted(async () => {
-  await Promise.all([refreshAll(), restoreCrawlJob()])
+  await Promise.all([refreshAll(), restoreCrawlJobs()])
 })
 
 onUnmounted(() => {
-  if (crawlTimer) clearInterval(crawlTimer)
+  Object.values(crawlTimers).forEach(clearInterval)
 })
 </script>
 
@@ -569,6 +560,10 @@ onUnmounted(() => {
       </div>
       <button class="icon-btn refresh-btn" @click="refreshAll" title="刷新">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+      </button>
+      <button class="btn primary" :class="{ active: showCrawlForm }" @click="showCrawlForm = !showCrawlForm">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+        采集
       </button>
       <button class="btn primary" @click="triggerUpload">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -626,65 +621,54 @@ onUnmounted(() => {
 
       <!-- 右侧文件列表 -->
       <main class="asset-panel">
-        <!-- 采集区域 -->
-        <div class="crawl-band">
+        <!-- 采集表单 - 点击采集按钮展开 -->
+        <div class="crawl-band" v-if="showCrawlForm || activeCrawlJobs.length > 0">
           <div class="crawl-fields">
-            <input type="text" v-model="crawlKeyword" placeholder="输入关键词联网采集资料">
+            <input type="text" v-model="crawlKeyword" placeholder="输入关键词联网采集资料" @keydown.enter="startCrawl">
             <input type="number" class="small-input" v-model.number="crawlMaxPages" :min="1" :max="crawlMaxLimit" placeholder="页数">
             <select v-model="crawlDepth" class="depth-select">
-              <option value="low">分析维度：低</option>
-              <option value="medium">分析维度：中</option>
-              <option value="high">分析维度：高</option>
+              <option value="low">低</option>
+              <option value="medium">中</option>
+              <option value="high">高</option>
             </select>
             <button class="btn primary crawl-btn" @click="startCrawl" :disabled="!crawlKeyword.trim()">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
               开始采集
+            </button>
+            <button class="icon-btn" v-if="!activeCrawlJobs.length" @click="showCrawlForm = false" title="收起">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
             </button>
           </div>
           <div class="crawl-hint">
-            <span class="hint-item">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-              页数：要采集的网页数量
-            </span>
-            <span class="hint-item">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              分析维度：越高分析越详细，内容越多
-            </span>
+            <span class="hint-item">页数：要采集的网页数量</span>
+            <span class="hint-item">维度：越高分析越详细</span>
           </div>
-          <div v-if="crawlJob" class="crawl-detail">
-            <div class="crawl-detail-head">
-              <span class="status-dot" :class="crawlJob.status === 'running' ? 'running' : (crawlJob.status === 'done' ? 'done' : 'failed')"></span>
-              <span class="crawl-title">{{ crawlJob.keyword }}</span>
-              <span class="crawl-state-label">{{ crawlJob.status === 'running' ? '采集中' : (crawlJob.status === 'done' ? '完成' : '失败') }}</span>
-              <span v-if="crawlJob.progress != null" class="crawl-pct">{{ crawlJob.progress }}%</span>
+
+          <!-- 进行中的采集任务 -->
+          <div v-for="job in activeCrawlJobs" :key="job.id" class="crawl-task-card">
+            <div class="task-card-head">
+              <span class="task-dot running"></span>
+              <span class="task-keyword">{{ job.keyword }}</span>
+              <span class="task-pct">{{ job.progress || 0 }}%</span>
             </div>
-            <div class="crawl-progress-bar">
-              <div :style="{ width: `${crawlJob.progress || 0}%` }"></div>
+            <div class="task-progress-bar">
+              <div :style="{ width: `${job.progress || 0}%` }"></div>
             </div>
-            <div v-if="crawlJob.detail?.stages" class="crawl-stages">
-              <div v-for="s in crawlStages" :key="s.key" class="crawl-stage-row">
-                <span class="crawl-stage-icon" :class="stageIconClass(s)">{{ stageIcon(s) }}</span>
-                <span class="crawl-stage-name">{{ s.label }}</span>
-                <span class="crawl-stage-pct">{{ s.progress }}%</span>
-                <div class="crawl-stage-bar">
-                  <div :style="{ width: `${s.progress}%` }"></div>
-                </div>
-                <span v-if="s.elapsed_ms" class="crawl-stage-time">{{ fmtElapsed(s.elapsed_ms) }}</span>
-              </div>
+            <div class="task-stages" v-if="job.detail?.stages">
+              <span v-for="s in getCrawlStages(job)" :key="s.key" class="task-stage-chip" :class="{ done: s.progress >= 100, active: s.progress > 0 && s.progress < 100 }">
+                <span class="chip-dot">{{ s.progress >= 100 ? '✓' : s.progress > 0 ? '●' : '○' }}</span>
+                {{ s.label }} {{ s.progress }}%
+              </span>
             </div>
-            <details v-if="crawlJob.logs && crawlJob.logs.length" class="crawl-logs" open>
-              <summary class="crawl-logs-toggle">日志 ({{ crawlJob.logs.length }})</summary>
-              <div class="crawl-logs-body">
-                <div v-for="(log, i) in crawlJob.logs" :key="i" class="crawl-log-line">
-                  <span class="cl-time">[{{ fmtLogTime(log.time) }}]</span>
-                  <span class="cl-level" :class="`cl-${log.level}`">{{ log.level === 'error' ? 'ERR' : log.level === 'warning' ? 'WRN' : 'INF' }}</span>
-                  <span class="cl-msg">{{ log.message }}</span>
+            <details v-if="job.logs && job.logs.length" class="task-logs" open>
+              <summary class="task-logs-toggle">日志 ({{ job.logs.length }})</summary>
+              <div class="task-logs-body">
+                <div v-for="(log, i) in job.logs" :key="i" class="task-log-line">
+                  <span class="tl-time">[{{ fmtLogTime(log.time) }}]</span>
+                  <span class="tl-level" :class="`tl-${log.level}`">{{ log.level === 'error' ? 'ERR' : log.level === 'warning' ? 'WRN' : 'INF' }}</span>
+                  <span class="tl-msg">{{ log.message }}</span>
                 </div>
               </div>
             </details>
-            <div v-if="crawlJob.status === 'failed' && crawlJob.message" class="crawl-error">
-              {{ crawlJob.message }}
-            </div>
           </div>
         </div>
 
@@ -985,48 +969,40 @@ onUnmounted(() => {
 
 .asset-panel { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .crawl-band, .attach-bar, .uploading-list { border: 1px solid var(--c-border); border-radius: 8px; background: var(--c-panel); padding: 12px; }
-.crawl-fields { display: flex; gap: 12px; align-items: center; }
-.crawl-options { display: flex; gap: 16px; align-items: center; }
-.option-item { display: flex; align-items: center; gap: 6px; }
-.option-label { font-size: 12px; color: var(--c-secondary); white-space: nowrap; }
+.crawl-fields { display: flex; gap: 8px; align-items: center; }
 .small-input { width: 60px !important; text-align: center; }
-.depth-select { padding: 6px 10px; border: 1px solid var(--c-border); border-radius: 6px; font-size: 12px; background: var(--c-bg); min-width: 120px; }
-.crawl-btn { padding: 8px 16px !important; gap: 6px; }
-.crawl-hint { display: flex; gap: 16px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--c-border); }
-.hint-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--c-secondary); }
-.crawl-detail { margin-top: 10px; padding: 10px 14px; background: var(--c-muted); border-radius: 8px; font-size: 12px; }
-.crawl-detail-head { display: flex; align-items: center; gap: 8px; color: var(--c-secondary); }
-.crawl-title { font-weight: 600; color: var(--c-text); }
-.crawl-state-label { color: var(--c-secondary); }
-.crawl-pct { font-weight: 700; color: var(--c-text); margin-left: auto; }
-.crawl-progress-bar { height: 4px; background: var(--c-border); border-radius: 999px; overflow: hidden; margin: 8px 0; }
-.crawl-progress-bar div { height: 100%; background: var(--c-fg); transition: width 220ms ease; }
-.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c-secondary); flex-shrink: 0; }
-.status-dot.running { background: #22c55e; box-shadow: 0 0 12px rgba(34, 197, 94, 0.5); }
-.status-dot.done { background: var(--c-success); }
-.status-dot.failed { background: var(--c-danger); }
-.crawl-stages { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
-.crawl-stage-row { display: grid; grid-template-columns: 18px 36px 36px 1fr auto; gap: 6px; align-items: center; }
-.crawl-stage-icon { font-size: 11px; text-align: center; }
-.crawl-stage-icon.done { color: var(--c-success); }
-.crawl-stage-icon.active { color: #22c55e; }
-.crawl-stage-icon.pending { color: var(--c-secondary); opacity: 0.5; }
-.crawl-stage-name { color: var(--c-text); font-weight: 600; }
-.crawl-stage-pct { color: var(--c-secondary); text-align: right; }
-.crawl-stage-bar { height: 3px; background: var(--c-border); border-radius: 999px; overflow: hidden; }
-.crawl-stage-bar div { height: 100%; background: var(--c-fg); transition: width 220ms ease; }
-.crawl-stage-time { color: var(--c-secondary); font-size: 11px; white-space: nowrap; }
-.crawl-logs { margin-top: 8px; }
-.crawl-logs-toggle { cursor: pointer; font-weight: 600; color: var(--c-secondary); font-size: 11px; padding: 4px 0; }
-.crawl-logs-body { margin-top: 4px; max-height: 160px; overflow-y: auto; font-family: monospace; font-size: 11px; background: var(--c-bg); border-radius: 6px; padding: 8px; }
-.crawl-log-line { display: flex; gap: 6px; padding: 1px 0; line-height: 1.5; }
-.cl-time { color: var(--c-secondary); white-space: nowrap; }
-.cl-level { font-weight: 700; min-width: 28px; }
-.cl-level.cl-error { color: #ef4444; }
-.cl-level.cl-warning { color: #f59e0b; }
-.cl-level.cl-info { color: var(--c-secondary); }
-.cl-msg { color: var(--c-text); word-break: break-word; }
-.crawl-error { margin-top: 6px; padding: 8px 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px; color: #ef4444; }
+.depth-select { padding: 6px 8px; border: 1px solid var(--c-border); border-radius: 6px; font-size: 12px; background: var(--c-bg); min-width: 72px; }
+.crawl-btn { padding: 8px 16px !important; gap: 6px; white-space: nowrap; }
+.crawl-hint { display: flex; gap: 16px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--c-border); font-size: 11px; color: var(--c-secondary); }
+.hint-item { display: flex; align-items: center; gap: 4px; }
+
+/* 进行中的采集任务卡片 */
+.crawl-task-card { margin-top: 10px; padding: 10px 12px; background: var(--c-muted); border-radius: 8px; border-left: 3px solid #22c55e; }
+.crawl-task-card + .crawl-task-card { margin-top: 6px; }
+.task-card-head { display: flex; align-items: center; gap: 8px; }
+.task-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.task-dot.running { background: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.5); animation: pulse-dot 1.5s ease-in-out infinite; }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.task-keyword { font-weight: 600; font-size: 13px; color: var(--c-text); flex: 1; }
+.task-pct { font-weight: 700; font-size: 12px; color: var(--c-text); }
+.task-progress-bar { height: 3px; background: var(--c-border); border-radius: 999px; overflow: hidden; margin: 6px 0; }
+.task-progress-bar div { height: 100%; background: var(--c-fg); transition: width 300ms ease; }
+.task-stages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.task-stage-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 2px 7px; border-radius: 999px; background: var(--c-bg); color: var(--c-secondary); }
+.task-stage-chip .chip-dot { font-size: 8px; }
+.task-stage-chip.active { color: #22c55e; background: rgba(34, 197, 94, 0.08); }
+.task-stage-chip.done { color: var(--c-success); }
+.task-logs { margin-top: 6px; }
+.task-logs-toggle { cursor: pointer; font-weight: 600; color: var(--c-secondary); font-size: 11px; padding: 3px 0; }
+.task-logs-toggle:hover { color: var(--c-fg); }
+.task-logs-body { margin-top: 4px; max-height: 160px; overflow-y: auto; font-family: monospace; font-size: 11px; background: var(--c-bg); border-radius: 6px; padding: 8px; }
+.task-log-line { display: flex; gap: 6px; padding: 1px 0; line-height: 1.5; }
+.tl-time { color: var(--c-secondary); white-space: nowrap; }
+.tl-level { font-weight: 700; min-width: 28px; }
+.tl-level.tl-error { color: #ef4444; }
+.tl-level.tl-warning { color: #f59e0b; }
+.tl-level.tl-info { color: var(--c-secondary); }
+.tl-msg { color: var(--c-text); word-break: break-word; }
 .attach-bar { display: flex; gap: 10px; align-items: center; }
 .attach-bar span { flex: 1; font-size: 13px; font-weight: 600; }
 .attach-bar select { min-width: 180px; padding: 7px 10px; border: 1px solid var(--c-border); border-radius: 6px; }
