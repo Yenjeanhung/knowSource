@@ -30,6 +30,7 @@ class UpdateAssetRequest(BaseModel):
     name: Optional[str] = None
     directory_id: Optional[str] = None
     summary: Optional[str] = None
+    content: Optional[str] = None
 
 
 class AttachAssetsRequest(BaseModel):

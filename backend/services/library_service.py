@@ -51,6 +51,10 @@ def _asset_to_dict(asset: FileAsset, kb_file_count: int | None = None) -> dict:
     }
 
 
+def _is_text_editable(asset: FileAsset) -> bool:
+    return asset.ext.lower() in {"txt", "md", "csv", "json", "html"}
+
+
 def _directory_to_dict(directory: FileDirectory, file_count: int = 0) -> dict:
     return {
         "id": directory.id,
@@ -321,6 +325,7 @@ class LibraryService:
         name: str | None = None,
         directory_id: str | None = None,
         summary: str | None = None,
+        content: str | None = None,
     ) -> dict | None:
         asset = await db.get(FileAsset, asset_id)
         if not asset:
@@ -332,6 +337,17 @@ class LibraryService:
             asset.directory_id = directory_id or None
         if summary is not None:
             asset.summary = summary.strip()
+        if content is not None:
+            if not asset.path:
+                raise ValueError("Asset file path is missing")
+            if not _is_text_editable(asset):
+                raise ValueError("Only text-like assets can be edited")
+            path = Path(asset.path)
+            if not path.exists():
+                raise ValueError("Asset file not found on disk")
+            path.write_text(content, encoding="utf-8")
+            asset.size = path.stat().st_size
+            asset.sha256 = _hash_file(path)
         asset.updated_at = _now_iso()
         await db.commit()
         await db.refresh(asset)

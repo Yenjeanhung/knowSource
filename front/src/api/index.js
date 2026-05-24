@@ -246,6 +246,21 @@ export async function deleteAsset(assetId) {
   return res.json()
 }
 
+export async function updateAsset(assetId, { name, directoryId, summary, content } = {}) {
+  const res = await fetch(`${API}/api/assets/${assetId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name,
+      directory_id: directoryId,
+      summary,
+      content,
+    }),
+  })
+  if (!res.ok) throw new Error('Update asset failed')
+  return res.json()
+}
+
 export async function attachAssetsToKb(kbId, assetIds, { autoProcess = false, extractGraph = true } = {}) {
   const res = await fetch(`${API}/api/kb/${kbId}/assets`, {
     method: 'POST',

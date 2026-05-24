@@ -110,13 +110,17 @@ async def preview_asset(asset_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.put("/assets/{asset_id}")
 async def update_asset(asset_id: str, req: UpdateAssetRequest, db: AsyncSession = Depends(get_db)):
-    result = await LibraryService.update_asset(
-        db,
-        asset_id,
-        name=req.name,
-        directory_id=req.directory_id,
-        summary=req.summary,
-    )
+    try:
+        result = await LibraryService.update_asset(
+            db,
+            asset_id,
+            name=req.name,
+            directory_id=req.directory_id,
+            summary=req.summary,
+            content=req.content,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     if not result:
         raise HTTPException(404, "Asset not found")
     return result

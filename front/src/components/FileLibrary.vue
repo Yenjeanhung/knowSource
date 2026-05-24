@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { marked } from 'marked'
 import FolderTreeNode from './FolderTreeNode.vue'
 import {
   attachAssetsToKb,
@@ -15,6 +16,7 @@ import {
   getAssetPreviewUrl,
   getCrawlJob,
   getLatestCrawlJob,
+  updateAsset,
   uploadAssetChunk,
 } from '../api'
 
@@ -61,6 +63,9 @@ const crawlJob = ref(null)
 const previewAsset = ref(null)
 const previewText = ref('')
 const previewLoading = ref(false)
+const previewMode = ref('preview')
+const previewDraft = ref('')
+const previewSaving = ref(false)
 
 let crawlTimer = null
 
@@ -116,6 +121,18 @@ function fmtSize(value = 0) {
 
 function sourceLabel(source) {
   return { upload: '上传', kb_upload: '知识库上传', crawl: '网络采集', legacy: '历史文件' }[source] || source || '未知'
+}
+
+function isEditableTextAsset(asset) {
+  return ['txt', 'md', 'csv', 'json', 'html'].includes((asset?.ext || '').toLowerCase())
+}
+
+function isMarkdownAsset(asset) {
+  return (asset?.ext || '').toLowerCase() === 'md'
+}
+
+function renderMarkdown(text) {
+  return marked.parse(text || '')
 }
 
 async function loadDirectories() {
@@ -362,14 +379,54 @@ async function deleteAsset(asset) {
 async function openPreview(asset) {
   previewAsset.value = asset
   previewLoading.value = true
+  previewMode.value = 'preview'
+  previewDraft.value = ''
   try {
     if (asset.ext !== 'pdf') {
       previewText.value = await fetchAssetContent(asset.id)
+      previewDraft.value = previewText.value
+    } else {
+      previewText.value = ''
     }
   } catch {
     previewText.value = ''
+    previewDraft.value = ''
   }
   previewLoading.value = false
+}
+
+function closePreview() {
+  previewAsset.value = null
+  previewText.value = ''
+  previewDraft.value = ''
+  previewMode.value = 'preview'
+  previewSaving.value = false
+}
+
+function togglePreviewMode(mode) {
+  previewMode.value = mode
+  if (mode === 'edit') {
+    previewDraft.value = previewText.value
+  }
+}
+
+async function savePreviewContent() {
+  if (!previewAsset.value || !isEditableTextAsset(previewAsset.value) || previewSaving.value) return
+  previewSaving.value = true
+  try {
+    const updated = await updateAsset(previewAsset.value.id, { content: previewDraft.value })
+    previewText.value = previewDraft.value
+    previewAsset.value = { ...previewAsset.value, ...updated }
+    assets.value = assets.value.map(item => (
+      item.id === updated.id
+        ? { ...item, ...updated }
+        : item
+    ))
+    previewMode.value = 'preview'
+  } catch {
+    window.alert('保存失败')
+  }
+  previewSaving.value = false
 }
 
 function toggleAssetSelection(id) {
@@ -636,20 +693,45 @@ onUnmounted(() => {
     </div>
 
     <!-- 预览弹窗 -->
-    <div class="modal-mask" v-if="previewAsset" @click.self="previewAsset = null">
+    <div class="modal-mask" v-if="previewAsset" @click.self="closePreview">
       <div class="preview-modal">
         <div class="preview-head">
           <div>
             <div class="preview-title">{{ previewAsset.name }}</div>
             <div class="preview-sub">{{ sourceLabel(previewAsset.source_type) }} · {{ fmtSize(previewAsset.size) }}</div>
           </div>
-          <button class="icon-btn" @click="previewAsset = null">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-          </button>
+          <div class="preview-actions">
+            <div v-if="isEditableTextAsset(previewAsset)" class="preview-mode-switch">
+              <button :class="{ active: previewMode === 'preview' }" @click="togglePreviewMode('preview')">预览</button>
+              <button :class="{ active: previewMode === 'edit' }" @click="togglePreviewMode('edit')">编辑</button>
+            </div>
+            <button
+              v-if="previewMode === 'edit' && isEditableTextAsset(previewAsset)"
+              class="btn primary preview-save-btn"
+              :disabled="previewSaving"
+              @click="savePreviewContent"
+            >
+              {{ previewSaving ? '保存中...' : '保存' }}
+            </button>
+            <button class="icon-btn" @click="closePreview">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+          </div>
         </div>
         <div class="preview-body">
           <div v-if="previewLoading" class="empty-state">加载中...</div>
           <iframe v-else-if="previewAsset.ext === 'pdf'" :src="getAssetPreviewUrl(previewAsset.id)" class="pdf-frame"></iframe>
+          <textarea
+            v-else-if="previewMode === 'edit' && isEditableTextAsset(previewAsset)"
+            v-model="previewDraft"
+            class="preview-editor"
+            spellcheck="false"
+          ></textarea>
+          <div
+            v-else-if="isMarkdownAsset(previewAsset)"
+            class="preview-markdown markdown-body"
+            v-html="renderMarkdown(previewText || '当前 Markdown 内容为空')"
+          ></div>
           <pre v-else class="preview-text">{{ previewText || '当前格式暂不支持文本预览' }}</pre>
         </div>
       </div>
@@ -842,7 +924,31 @@ onUnmounted(() => {
 .preview-title { font-weight: 700; font-size: 14px; }
 .preview-sub { color: var(--c-secondary); font-size: 12px; margin-top: 2px; }
 .preview-body { min-height: 360px; overflow: auto; }
+.preview-actions { display: flex; align-items: center; gap: 10px; }
+.preview-mode-switch { display: inline-flex; align-items: center; padding: 2px; border: 1px solid var(--c-border); border-radius: 999px; background: var(--c-muted); }
+.preview-mode-switch button { border: 0; background: transparent; color: var(--c-secondary); padding: 6px 12px; border-radius: 999px; cursor: pointer; font-size: 12px; font-weight: 600; }
+.preview-mode-switch button.active { background: var(--c-panel); color: var(--c-fg); }
+.preview-save-btn { min-width: 92px; justify-content: center; }
 .preview-text { padding: 16px; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.65; color: var(--c-fg); }
+.preview-editor { width: 100%; min-height: 70vh; border: 0; resize: none; background: var(--c-panel); color: var(--c-fg); padding: 16px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.7; outline: none; }
+.preview-markdown { padding: 16px; color: var(--c-fg); line-height: 1.7; }
+.preview-markdown h1, .preview-markdown h2, .preview-markdown h3 { margin: 14px 0 8px; font-weight: 700; }
+.preview-markdown h1 { font-size: 1.35em; }
+.preview-markdown h2 { font-size: 1.18em; }
+.preview-markdown h3 { font-size: 1.06em; }
+.preview-markdown p { margin: 8px 0; }
+.preview-markdown ul, .preview-markdown ol { margin: 8px 0; padding-left: 1.4em; }
+.preview-markdown li { margin: 4px 0; }
+.preview-markdown code { background: var(--c-muted); padding: 2px 6px; border-radius: 4px; font-size: 0.92em; }
+.preview-markdown pre { background: #0f141a; color: #e5edf5; padding: 14px 16px; border-radius: 8px; overflow-x: auto; margin: 10px 0; }
+.preview-markdown pre code { background: transparent; padding: 0; color: inherit; }
+.preview-markdown table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+.preview-markdown th, .preview-markdown td { border: 1px solid var(--c-border); padding: 8px 10px; text-align: left; vertical-align: top; }
+.preview-markdown th { background: var(--c-muted); }
+.preview-markdown blockquote { margin: 10px 0; padding: 8px 12px; border-left: 3px solid var(--c-accent); background: rgba(161, 98, 7, 0.08); color: var(--c-secondary); }
+.preview-markdown a { color: var(--c-accent); }
+.preview-markdown hr { border: 0; border-top: 1px solid var(--c-border); margin: 14px 0; }
+.preview-markdown img { max-width: 100%; border-radius: 8px; }
 .pdf-frame { width: 100%; height: 70vh; border: 0; }
 .empty-state { padding: 40px 24px; text-align: center; color: var(--c-secondary); }
 .empty-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
@@ -868,5 +974,8 @@ onUnmounted(() => {
   .table-head { display: none; }
   .asset-row { grid-template-columns: 32px minmax(0, 1fr) auto; }
   .asset-source, .asset-kb { display: none; }
+  .preview-head { align-items: flex-start; }
+  .preview-actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
+  .preview-editor { min-height: 60vh; }
 }
 </style>
