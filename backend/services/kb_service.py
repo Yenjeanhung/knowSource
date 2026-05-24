@@ -39,6 +39,7 @@ class KBService:
                 ),
                 # 添加处理状态：如果有文件正在处理，返回处理中的文件数和总进度
                 "processing_files": sum(1 for file in kb.files if file.status == "processing"),
+                "pending_files": sum(1 for file in kb.files if file.status in ("uploaded", "uploading")),
                 # 添加失败文件数量
                 "failed_files": sum(1 for file in kb.files if file.status == "failed"),
                 "overall_progress": max((file.progress for file in kb.files), default=0) if kb.files else 0,

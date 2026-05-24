@@ -153,6 +153,11 @@ onMounted(loadKbs)
                   <circle class="spin" cx="12" cy="12" r="10"/>
                 </svg>
               </span>
+              <span class="pending-indicator" v-if="kb.pending_files">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="12" r="10"/>
+                </svg>
+              </span>
               <span class="failed-indicator" v-if="kb.failed_files">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 2L2 20h20L12 2zm0 15l-.5-6h1l-.5 6zm0-8l-.5-3h1l-.5 3z"/>
@@ -160,7 +165,7 @@ onMounted(loadKbs)
               </span>
             </div>
             <div class="kb-body">
-              <div class="kb-title">{{ kb.name }} <span v-if="kb.processing_files" class="processing-text">处理中...</span><span v-if="kb.failed_files" class="failed-text">失败 {{ kb.failed_files }}</span></div>
+              <div class="kb-title">{{ kb.name }} <span v-if="kb.processing_files" class="processing-text">处理中...</span><span v-if="kb.pending_files" class="pending-text">未处理 {{ kb.pending_files }}</span><span v-if="kb.failed_files" class="failed-text">失败 {{ kb.failed_files }}</span></div>
             <div class="kb-meta">
               <span v-for="t in kb.file_types?.slice(0, 4)" :key="t" class="tag" :style="{ color: typeColor(t), background: typeColor(t) + '15' }">{{ t }}</span>
               <span class="kb-desc" v-if="kb.description">{{ kb.description }}</span>
@@ -201,6 +206,11 @@ onMounted(loadKbs)
                   <circle class="spin" cx="12" cy="12" r="10"/>
                 </svg>
               </span>
+              <span class="card-pending-indicator" v-if="kb.pending_files">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="12" r="10"/>
+                </svg>
+              </span>
               <span class="card-failed-indicator" v-if="kb.failed_files">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 2L2 20h20L12 2zm0 15l-.5-6h1l-.5 6zm0-8l-.5-3h1l-.5 3z"/>
@@ -215,6 +225,7 @@ onMounted(loadKbs)
           <div class="card-name">
             {{ kb.name }}
             <span v-if="kb.processing_files" class="card-processing-text">处理中...</span>
+            <span v-if="kb.pending_files" class="card-pending-text">未处理 {{ kb.pending_files }}</span>
             <span v-if="kb.failed_files" class="card-failed-text">失败 {{ kb.failed_files }}</span>
           </div>
           <div class="card-desc" v-if="kb.description">{{ kb.description }}</div>
@@ -330,6 +341,20 @@ onMounted(loadKbs)
   font-size: 12px;
   font-weight: 400;
   color: #4ade80;
+}
+
+.pending-indicator {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  color: #fbbf24;
+}
+
+.pending-text {
+  font-size: 12px;
+  font-weight: 400;
+  color: #fbbf24;
+  margin-left: 6px;
 }
 
 .failed-indicator {
@@ -525,8 +550,10 @@ onMounted(loadKbs)
 .card-icon-box { position: relative; width: 40px; height: 40px; border-radius: 10px; background: var(--c-muted); display: flex; align-items: center; justify-content: center; }
 .card-badge { position: absolute; top: -4px; right: -6px; background: var(--c-fg); color: var(--c-bg); font-size: 10px; font-weight: 700; min-width: 17px; height: 17px; border-radius: 9px; display: flex; align-items: center; justify-content: center; padding: 0 5px; }
 .card-processing-indicator { position: absolute; bottom: -2px; right: -2px; color: #4ade80; }
+.card-pending-indicator { position: absolute; top: -2px; left: -2px; color: #fbbf24; }
 .card-failed-indicator { position: absolute; bottom: -2px; left: -2px; color: #ef4444; }
 .card-processing-text { font-size: 12px; font-weight: 400; color: #4ade80; margin-left: 6px; }
+.card-pending-text { font-size: 12px; font-weight: 400; color: #fbbf24; margin-left: 6px; }
 .card-failed-text { font-size: 12px; font-weight: 400; color: #ef4444; margin-left: 6px; }
 .card-progress-bar { height: 4px; background: var(--c-muted); border-radius: 2px; overflow: hidden; margin-top: 4px; }
 .card-progress-fill { height: 100%; background: linear-gradient(90deg, #4ade80, #22c55e); border-radius: 2px; transition: width 0.3s ease; }
