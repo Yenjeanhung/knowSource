@@ -31,6 +31,9 @@ const entityQuery = ref('')
 const relationType = ref('')
 const viewMode = ref('graph')
 const showChunkList = ref(false)
+const relationPage = ref(1)
+const relationPageSize = ref(20)
+const RELATION_PAGE_SIZE_OPTIONS = [10, 20, 50]
 
 const loading = ref(false)
 const error = ref('')
@@ -75,6 +78,72 @@ const sortedRecords = computed(() => {
   return arr
 })
 
+const relationRows = computed(() => {
+  const relationMap = new Map()
+
+  for (const record of sortedRecords.value) {
+    for (const relation of (record.relations || [])) {
+      const key = relation.relation_id || [
+        relation.source_name,
+        relation.source_type,
+        relation.relation_type,
+        relation.target_name,
+        relation.target_type,
+      ].join('|').toLowerCase()
+
+      const origin = {
+        chunk_id: record.chunk_id,
+        chunk_index: record.chunk_index,
+        file_id: record.file_id,
+        file_name: record.file_name || '',
+        label: `${record.file_name || '-'} / Chunk ${record.chunk_index}`,
+      }
+
+      if (!relationMap.has(key)) {
+        relationMap.set(key, {
+          id: key,
+          relation_id: relation.relation_id || '',
+          relation_type: relation.relation_type || '',
+          description: relation.description || '',
+          source_entity_id: relation.source_entity_id || '',
+          source_name: relation.source_name || '',
+          source_type: relation.source_type || '',
+          target_entity_id: relation.target_entity_id || '',
+          target_name: relation.target_name || '',
+          target_type: relation.target_type || '',
+          origins: [origin],
+          origin_label: origin.label,
+          origin_count: 1,
+          chunk_id: record.chunk_id,
+        })
+        continue
+      }
+
+      const row = relationMap.get(key)
+      if (!row.origins.some(item => item.chunk_id === record.chunk_id)) {
+        row.origins.push(origin)
+        row.origin_count = row.origins.length
+        row.origin_label = `${row.origins[0].label} 等 ${row.origin_count} 处`
+      }
+    }
+  }
+
+  return Array.from(relationMap.values())
+})
+
+const relationTotal = computed(() => relationRows.value.length)
+const relationTotalPages = computed(() => Math.max(1, Math.ceil(relationTotal.value / relationPageSize.value)))
+const normalizedRelationPage = computed(() => Math.min(relationPage.value, relationTotalPages.value))
+const relationPageRows = computed(() => {
+  const start = (normalizedRelationPage.value - 1) * relationPageSize.value
+  return relationRows.value.slice(start, start + relationPageSize.value)
+})
+const relationRangeStart = computed(() => {
+  if (!relationTotal.value) return 0
+  return (normalizedRelationPage.value - 1) * relationPageSize.value + 1
+})
+const relationRangeEnd = computed(() => Math.min(normalizedRelationPage.value * relationPageSize.value, relationTotal.value))
+
 const selectedChunk = computed(() => records.value.find(item => item.chunk_id === selectedChunkId.value) || null)
 const selectedNode = computed(() => nodes.value.find(n => n.id === selectedNodeId.value) || null)
 
@@ -105,16 +174,6 @@ const edgeRenderList = computed(() => {
 const selectedNodeEdges = computed(() => {
   if (!selectedNodeId.value) return []
   return edges.value.filter(e => e.source === selectedNodeId.value || e.target === selectedNodeId.value)
-})
-
-const groupedRecords = computed(() => {
-  const groups = {}
-  for (const r of sortedRecords.value) {
-    const key = r.file_name || r.file_id
-    if (!groups[key]) groups[key] = { file_name: key, rows: [] }
-    groups[key].rows.push(r)
-  }
-  return Object.values(groups)
 })
 
 // ======================= Force simulation =======================
@@ -474,6 +533,7 @@ async function loadView() {
     assignColors(); buildGraph(); startSimulation()
     selectedNodeId.value = ''
     selectedChunkId.value = records.value[0]?.chunk_id || ''
+    relationPage.value = 1
   } catch (err) {
     error.value = err.message || '加载图谱失败'
     graphData.value = null; stopSimulation()
@@ -487,8 +547,16 @@ async function onKbChange() {
 async function onFileChange() { relationType.value = ''; await loadRelationTypes(); await loadView() }
 async function submitFilters() { await loadView() }
 
-function selectChunk(record) {
-  selectedChunkId.value = record.chunk_id
+function selectRelationRow(row) {
+  selectedChunkId.value = row.chunk_id
+}
+
+function setRelationPage(page) {
+  relationPage.value = Math.max(1, Math.min(page, relationTotalPages.value))
+}
+
+function onRelationPageSizeChange() {
+  relationPage.value = 1
 }
 
 onMounted(async () => {
@@ -694,35 +762,76 @@ onUnmounted(() => stopSimulation())
       <div v-if="!selectedKbId" class="empty-state"><div class="title">先选择一个知识库</div></div>
       <div v-else-if="loading" class="loading-row"><span class="spinner"></span> 加载中...</div>
       <div v-else-if="error" class="error-text">{{ error }}</div>
-      <div v-else-if="!records.length" class="empty-state"><div class="title">没有图谱结果</div></div>
-      <div v-else class="list-main">
-        <section v-for="file in groupedRecords" :key="file.file_name" class="file-section">
-          <div class="file-head">
-            <div class="file-title">{{ file.file_name }}</div>
-            <div class="file-sub">{{ file.rows.length }} 个分片</div>
+      <div v-else-if="!relationRows.length" class="empty-state">
+        <div class="title">没有关系结果</div>
+        <div class="desc">当前筛选条件下没有可展示的起点、终点、关系三元组。</div>
+      </div>
+      <div v-else class="relation-list-main">
+        <div class="relation-list-head">
+          <div>
+            <div class="relation-list-title">关系列表</div>
+            <div class="relation-list-sub">
+              共 {{ relationTotal }} 条关系，当前 {{ relationRangeStart }}-{{ relationRangeEnd }}
+            </div>
           </div>
-          <div class="record-grid">
-            <article
-              v-for="record in file.rows"
-              :key="record.chunk_id"
-              class="record-card"
-              :class="{ active: selectedChunkId === record.chunk_id }"
-              @click="selectChunk(record)"
-            >
-              <div class="record-head">
-                <strong>Chunk {{ record.chunk_index }}</strong>
-                <span>{{ record.entity_count }} 实体 · {{ record.relation_count }} 关系</span>
-              </div>
-              <div class="record-preview">{{ (record.content_preview || '').slice(0, 200) }}</div>
-              <div class="chip-list" v-if="record.entities?.length">
-                <span v-for="entity in record.entities.slice(0, 5)" :key="entity.entity_id" class="entity-chip">
-                  {{ entity.name }}
-                  <small>{{ entityTypeLabel(entity.entity_type) }}</small>
-                </span>
-              </div>
-            </article>
+          <div class="relation-page-tools">
+            <label class="page-size-control">
+              每页
+              <select v-model.number="relationPageSize" @change="onRelationPageSizeChange">
+                <option v-for="size in RELATION_PAGE_SIZE_OPTIONS" :key="size" :value="size">{{ size }}</option>
+              </select>
+            </label>
+            <div class="page-stepper">
+              <button :disabled="normalizedRelationPage <= 1" @click="setRelationPage(normalizedRelationPage - 1)">上一页</button>
+              <span>{{ normalizedRelationPage }} / {{ relationTotalPages }}</span>
+              <button :disabled="normalizedRelationPage >= relationTotalPages" @click="setRelationPage(normalizedRelationPage + 1)">下一页</button>
+            </div>
           </div>
-        </section>
+        </div>
+
+        <div class="relation-table-wrap">
+          <table class="relation-table">
+            <thead>
+              <tr>
+                <th>起点</th>
+                <th>关系</th>
+                <th>终点</th>
+                <th>来源</th>
+                <th>描述</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="row in relationPageRows"
+                :key="row.id"
+                :class="{ active: selectedChunkId === row.chunk_id }"
+                @click="selectRelationRow(row)"
+              >
+                <td>
+                  <div class="entity-cell">
+                    <strong>{{ row.source_name || '-' }}</strong>
+                    <small>{{ entityTypeLabel(row.source_type) }}</small>
+                  </div>
+                </td>
+                <td><span class="relation-type-pill">{{ row.relation_type || '-' }}</span></td>
+                <td>
+                  <div class="entity-cell">
+                    <strong>{{ row.target_name || '-' }}</strong>
+                    <small>{{ entityTypeLabel(row.target_type) }}</small>
+                  </div>
+                </td>
+                <td>
+                  <div class="origin-cell">
+                    <strong>{{ row.origin_label }}</strong>
+                    <small v-if="row.origin_count > 1">点击行会定位到首个来源分片</small>
+                    <small v-else>点击行定位来源分片</small>
+                  </div>
+                </td>
+                <td class="relation-desc">{{ row.description || '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -932,6 +1041,69 @@ onUnmounted(() => stopSimulation())
 
 /* List mode */
 .list-mode { padding: 16px; }
+.relation-list-main { display: flex; flex-direction: column; gap: 12px; }
+.relation-list-head {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; flex-wrap: wrap;
+}
+.relation-list-title { font-size: 15px; font-weight: 700; }
+.relation-list-sub { margin-top: 3px; color: var(--c-secondary); font-size: 12px; }
+.relation-page-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.page-size-control {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--c-secondary); font-size: 12px; font-weight: 600;
+}
+.page-size-control select {
+  height: 32px; padding: 0 8px; border: 1px solid var(--c-border);
+  border-radius: 8px; background: var(--c-panel); color: var(--c-fg);
+}
+.page-stepper { display: inline-flex; align-items: center; gap: 8px; }
+.page-stepper button {
+  height: 32px; padding: 0 10px; border: 1px solid var(--c-border);
+  border-radius: 8px; background: var(--c-panel); color: var(--c-fg);
+  font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.page-stepper button:disabled { opacity: 0.45; cursor: not-allowed; }
+.page-stepper span { min-width: 54px; text-align: center; color: var(--c-secondary); font-size: 12px; font-weight: 700; }
+.relation-table-wrap {
+  overflow: auto; border: 1px solid var(--c-border); border-radius: 12px;
+}
+.relation-table {
+  width: 100%; min-width: 920px; border-collapse: collapse;
+}
+.relation-table th,
+.relation-table td {
+  padding: 11px 12px; border-bottom: 1px solid var(--c-border);
+  text-align: left; vertical-align: top; font-size: 12px;
+}
+.relation-table th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--c-muted); color: var(--c-secondary);
+  font-size: 11px; font-weight: 800; letter-spacing: 0.04em;
+}
+.relation-table tbody tr { cursor: pointer; transition: background 120ms; }
+.relation-table tbody tr:hover { background: var(--c-muted); }
+.relation-table tbody tr.active { background: rgba(161,98,7,0.08); }
+.relation-table tbody tr:last-child td { border-bottom: 0; }
+.entity-cell,
+.origin-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.entity-cell strong,
+.origin-cell strong {
+  color: var(--c-fg); font-size: 13px; line-height: 1.35;
+  word-break: break-word;
+}
+.entity-cell small,
+.origin-cell small { color: var(--c-secondary); font-size: 11px; line-height: 1.35; }
+.relation-type-pill {
+  display: inline-flex; align-items: center;
+  max-width: 180px; padding: 4px 9px; border: 1px solid var(--c-border);
+  border-radius: 999px; color: var(--c-fg); background: var(--c-panel);
+  font-size: 12px; font-weight: 700; white-space: normal; word-break: break-word;
+}
+.relation-desc {
+  max-width: 360px; color: var(--c-secondary); line-height: 1.5;
+  word-break: break-word;
+}
 .list-main { display: flex; flex-direction: column; gap: 14px; }
 .file-section + .file-section { border-top: 1px solid var(--c-border); padding-top: 12px; }
 .file-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; }
@@ -974,6 +1146,8 @@ onUnmounted(() => stopSimulation())
   .graph-toolbar { flex-direction: column; align-items: stretch; }
   .toolbar-right { justify-content: space-between; }
   .graph-filters { grid-template-columns: 1fr; }
+  .relation-list-head { align-items: stretch; }
+  .relation-page-tools { justify-content: space-between; }
   .chunk-grid-compact { grid-template-columns: 1fr; }
   .record-grid { grid-template-columns: 1fr; }
   .graph-canvas { min-height: 360px; }
