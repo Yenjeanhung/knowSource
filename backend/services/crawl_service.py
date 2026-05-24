@@ -141,13 +141,38 @@ def _search_web(keyword: str, limit: int, timeout: int) -> list[str]:
     return urls
 
 
-def _summarize_with_llm(keyword: str, documents: list[dict]) -> tuple[str, str]:
+def _clean_thinking(content: str) -> str:
+    return re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
+
+
+def _summarize_with_llm(keyword: str, documents: list[dict], depth: str = "medium") -> tuple[str, str]:
     joined = "\n\n".join(
         f"来源：{item['url']}\n标题：{item['title']}\n正文摘录：{item['text'][:5000]}"
         for item in documents
     )
+    
+    depth_config = {
+        "low": {
+            "prompt_suffix": "要求：简洁整理，保留核心事实和来源链接，给出 3 条要点。",
+            "max_length": 12000,
+            "text_limit": 2000,
+        },
+        "medium": {
+            "prompt_suffix": "要求：保留事实边界，不要编造；按主题分节；列出来源链接；最后给出 5 条要点。",
+            "max_length": 24000,
+            "text_limit": 3000,
+        },
+        "high": {
+            "prompt_suffix": "要求：详细分析整理，深入挖掘信息；按主题分节并展开子主题；列出来源链接；给出 8-10 条要点；提供多角度分析。",
+            "max_length": 40000,
+            "text_limit": 5000,
+        },
+    }
+    
+    config = depth_config.get(depth, depth_config["medium"])
+    
     fallback = "\n\n".join(
-        f"## {item['title']}\n\n来源：{item['url']}\n\n{item['text'][:3000]}"
+        f"## {item['title']}\n\n来源：{item['url']}\n\n{item['text'][:config['text_limit']]}"
         for item in documents
     )
     try:
@@ -155,12 +180,13 @@ def _summarize_with_llm(keyword: str, documents: list[dict]) -> tuple[str, str]:
 
         llm = create_llm()
         prompt = (
-            "你是资料采集助手。请基于给定网页摘录，整理一份可进入知识库的中文 Markdown 文档。"
-            "要求：保留事实边界，不要编造；按主题分节；列出来源链接；最后给出 5 条要点。\n\n"
-            f"关键词：{keyword}\n\n{joined[:24000]}"
+            f"你是资料采集助手。请基于给定网页摘录，整理一份可进入知识库的中文 Markdown 文档。\n"
+            f"{config['prompt_suffix']}\n\n"
+            f"关键词：{keyword}\n\n{joined[:config['max_length']]}"
         )
         response = llm.invoke(prompt)
         content = getattr(response, "content", str(response)).strip()
+        content = _clean_thinking(content)
         if content:
             summary = content.split("\n", 1)[0].strip("# ").strip()[:200]
             return content, summary or f"{keyword} 采集资料"
@@ -180,6 +206,7 @@ class CrawlService:
         auto_attach_kb_id: str | None = None,
         auto_process: bool = False,
         extract_graph: bool = True,
+        analysis_depth: str = "medium",
     ) -> dict:
         keyword = keyword.strip()
         if not keyword:
@@ -210,6 +237,7 @@ class CrawlService:
                 auto_attach_kb_id=auto_attach_kb_id,
                 auto_process=auto_process,
                 extract_graph=extract_graph,
+                analysis_depth=analysis_depth,
             )
         )
         return _job_to_dict(job)
@@ -217,6 +245,15 @@ class CrawlService:
     @staticmethod
     async def get_job(db: AsyncSession, job_id: str) -> dict | None:
         job = await db.get(CrawlJob, job_id)
+        return _job_to_dict(job) if job else None
+
+    @staticmethod
+    async def get_latest_job(db: AsyncSession) -> dict | None:
+        from sqlalchemy import select, desc
+        result = await db.execute(
+            select(CrawlJob).order_by(desc(CrawlJob.created_at)).limit(1)
+        )
+        job = result.scalar_one_or_none()
         return _job_to_dict(job) if job else None
 
     @staticmethod
@@ -253,6 +290,7 @@ class CrawlService:
         auto_attach_kb_id: str | None,
         auto_process: bool,
         extract_graph: bool,
+        analysis_depth: str = "medium",
     ):
         async with async_session() as db:
             job = await db.get(CrawlJob, job_id)
@@ -312,7 +350,7 @@ class CrawlService:
                     progress=75,
                     message="正在调用大模型清洗整理资料",
                 )
-                markdown, summary = await asyncio.to_thread(_summarize_with_llm, job.keyword, documents)
+                markdown, summary = await asyncio.to_thread(_summarize_with_llm, job.keyword, documents, analysis_depth)
 
                 ASSET_DIR.mkdir(parents=True, exist_ok=True)
                 file_id = uuid.uuid4().hex[:12]

@@ -3,12 +3,16 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pathlib import Path
+from pydantic import BaseModel
 
 from database import get_db
 from services.file_service import FileService
 from models import File as FileModel
 
 router = APIRouter()
+
+class BatchDeleteRequest(BaseModel):
+    file_ids: list[str]
 
 
 @router.post("/upload/chunk")
@@ -79,6 +83,14 @@ async def delete_file(file_id: str, db: AsyncSession = Depends(get_db)):
     if not deleted:
         raise HTTPException(404, "File not found")
     return {"status": "deleted"}
+
+
+@router.post("/files/batch-delete")
+async def batch_delete_files(request: BatchDeleteRequest, db: AsyncSession = Depends(get_db)):
+    if not request.file_ids:
+        raise HTTPException(400, "file_ids is required")
+    result = await FileService.batch_delete(db, request.file_ids)
+    return result
 
 
 @router.get("/files/{file_id}/preview")

@@ -36,6 +36,16 @@ export async function deleteFile(fileId) {
   await fetch(`${API}/api/files/${fileId}`, { method: 'DELETE' })
 }
 
+export async function batchDeleteFiles(fileIds) {
+  const res = await fetch(`${API}/api/files/batch-delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file_ids: fileIds }),
+  })
+  if (!res.ok) throw new Error('Batch delete failed')
+  return res.json()
+}
+
 export async function cancelProcessing(fileId) {
   const res = await fetch(`${API}/api/files/${fileId}/cancel`, { method: 'POST' })
   if (!res.ok) throw new Error('Cancel failed')
@@ -197,6 +207,16 @@ export async function deleteDirectory(directoryId) {
   return res.json()
 }
 
+export async function updateDirectory(directoryId, { name, parentId = null }) {
+  const res = await fetch(`${API}/api/file-directories/${directoryId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, parent_id: parentId }),
+  })
+  if (!res.ok) throw new Error('Update directory failed')
+  return res.json()
+}
+
 export async function fetchAssets({ directoryId = '', q = '' } = {}) {
   const params = new URLSearchParams()
   if (directoryId) params.set('directory_id', directoryId)
@@ -247,6 +267,7 @@ export async function createCrawlJob({
   autoAttachKbId = null,
   autoProcess = false,
   extractGraph = true,
+  analysisDepth = 'medium',
 }) {
   const res = await fetch(`${API}/api/crawl-jobs`, {
     method: 'POST',
@@ -258,6 +279,7 @@ export async function createCrawlJob({
       auto_attach_kb_id: autoAttachKbId,
       auto_process: autoProcess,
       extract_graph: extractGraph,
+      analysis_depth: analysisDepth,
     }),
   })
   if (!res.ok) throw new Error('Create crawl job failed')
@@ -267,6 +289,12 @@ export async function createCrawlJob({
 export async function getCrawlJob(jobId) {
   const res = await fetch(`${API}/api/crawl-jobs/${jobId}`)
   if (!res.ok) throw new Error('Fetch crawl job failed')
+  return res.json()
+}
+
+export async function getLatestCrawlJob() {
+  const res = await fetch(`${API}/api/crawl-jobs/latest`)
+  if (!res.ok) throw new Error('Fetch latest crawl job failed')
   return res.json()
 }
 

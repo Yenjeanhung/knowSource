@@ -45,3 +45,4 @@ class CreateCrawlJobRequest(BaseModel):
     auto_attach_kb_id: Optional[str] = None
     auto_process: bool = False
     extract_graph: bool = True
+    analysis_depth: str = "medium"

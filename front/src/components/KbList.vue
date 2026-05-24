@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchKbs, updateKb, deleteKb as apiDeleteKb } from '../api'
+import { fetchKbs, updateKb, deleteKb as apiDeleteKb, getKb } from '../api'
 import CreateKbModal from './CreateKbModal.vue'
 
 const router = useRouter()
@@ -15,6 +15,52 @@ const editId = ref('')
 const editName = ref('')
 const editDesc = ref('')
 
+// Confirm dialog state
+const showConfirmDialog = ref(false)
+const confirmDialogTitle = ref('')
+const confirmDialogMessage = ref('')
+const confirmDialogConfirmText = ref('确定')
+const confirmDialogCancelText = ref('取消')
+const confirmDialogType = ref('warning') // 'warning', 'error', 'info'
+let confirmDialogCallback = null
+
+// Alert dialog state (info only, no cancel)
+const showAlertDialog = ref(false)
+const alertDialogTitle = ref('')
+const alertDialogMessage = ref('')
+
+function showConfirm(title, message, confirmText = '确定', cancelText = '取消', type = 'warning') {
+  return new Promise(resolve => {
+    confirmDialogTitle.value = title
+    confirmDialogMessage.value = message
+    confirmDialogConfirmText.value = confirmText
+    confirmDialogCancelText.value = cancelText
+    confirmDialogType.value = type
+    confirmDialogCallback = resolve
+    showConfirmDialog.value = true
+  })
+}
+
+function showAlert(title, message) {
+  alertDialogTitle.value = title
+  alertDialogMessage.value = message
+  showAlertDialog.value = true
+}
+
+function confirmDialogOk() {
+  showConfirmDialog.value = false
+  confirmDialogCallback(true)
+}
+
+function confirmDialogCancel() {
+  showConfirmDialog.value = false
+  confirmDialogCallback(false)
+}
+
+function closeAlertDialog() {
+  showAlertDialog.value = false
+}
+
 const filteredKbs = computed(() => {
   const q = kbSearch.value.toLowerCase().trim()
   if (!q) return kbs.value
@@ -26,7 +72,21 @@ async function loadKbs() { try { kbs.value = await fetchKbs() } catch {} }
 async function removeKb(kbId, e) {
   e && e.stopPropagation()
   const kb = kbs.value.find(k => k.id === kbId)
-  if (!confirm(`确定删除「${kb?.name}」及其所有文件？`)) return
+  
+  // 先检查知识库是否有文件
+  let hasFiles = false
+  try {
+    const kbDetail = await getKb(kbId)
+    hasFiles = kbDetail.files && kbDetail.files.length > 0
+  } catch {}
+  
+  if (hasFiles) {
+    showAlert('提示', '该知识库中还有文件，请先删除所有文件后再删除知识库。')
+    return
+  }
+  
+  const confirmed = await showConfirm('删除知识库', `确认要删除「${kb?.name}」吗？`, '删除', '取消')
+  if (!confirmed) return
   try { await apiDeleteKb(kbId) } catch {}
   await loadKbs()
 }
@@ -108,7 +168,7 @@ onMounted(loadKbs)
             <button class="icon-btn" @click="openEdit(kb, $event)" title="编辑">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
             </button>
-            <button class="icon-btn danger" @click="removeKb(kb.id, $event)" title="删除">
+            <button class="rm-btn" @click="removeKb(kb.id, $event)" title="删除">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
           </div>
@@ -131,7 +191,7 @@ onMounted(loadKbs)
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
             <div class="card-actions">
               <button class="icon-btn" @click="openEdit(kb, $event)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
-              <button class="icon-btn danger" @click="removeKb(kb.id, $event)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+              <button class="rm-btn" @click="removeKb(kb.id, $event)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
             </div>
           </div>
           <div class="card-name">{{ kb.name }}</div>
@@ -156,6 +216,42 @@ onMounted(loadKbs)
         <div class="field"><label>名称</label><input type="text" v-model="editName" placeholder="知识库名称" @keydown.enter="saveEdit" autofocus></div>
         <div class="field"><label>描述</label><textarea v-model="editDesc" placeholder="简要描述知识库内容" rows="3"></textarea></div>
         <div class="modal-btns"><button class="btn" @click="showEditModal = false">取消</button><button class="btn primary" @click="saveEdit" :disabled="!editName.trim()">保存</button></div>
+      </div>
+    </div>
+
+    <div class="modal-mask" v-if="showConfirmDialog" @click.self="confirmDialogCancel">
+      <div class="modal confirm-modal" @click.stop>
+        <div :class="['confirm-icon', confirmDialogType]">
+          <svg v-if="confirmDialogType === 'error'" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L2 20h20L12 2zm0 15l-.5-6h1l-.5 6zm0-8l-.5-3h1l-.5 3z"/>
+          </svg>
+          <svg v-else width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L2 20h20L12 2zm0 15l-.5-6h1l-.5 6zm0-8l-.5-3h1l-.5 3z"/>
+          </svg>
+        </div>
+        <div class="confirm-title">{{ confirmDialogTitle }}</div>
+        <div class="confirm-message">{{ confirmDialogMessage }}</div>
+        <div class="confirm-actions">
+          <button class="confirm-btn cancel" @click="confirmDialogCancel">{{ confirmDialogCancelText }}</button>
+          <button class="confirm-btn ok" @click="confirmDialogOk">{{ confirmDialogConfirmText }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alert Dialog -->
+    <div class="modal-mask" v-if="showAlertDialog" @click.self="closeAlertDialog">
+      <div class="modal alert-modal" @click.stop>
+        <div class="alert-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L2 20h20L12 2zm0 15l-.5-6h1l-.5 6zm0-8l-.5-3h1l-.5 3z"/>
+          </svg>
+        </div>
+        <div class="alert-title">{{ alertDialogTitle }}</div>
+        <div class="alert-message">{{ alertDialogMessage }}</div>
+        <div class="alert-actions">
+          <button class="alert-btn cancel" @click="closeAlertDialog">取消</button>
+          <button class="alert-btn ok" @click="closeAlertDialog">确定</button>
+        </div>
       </div>
     </div>
 
@@ -231,6 +327,151 @@ onMounted(loadKbs)
 .icon-btn { background: none; border: none; cursor: pointer; color: var(--c-secondary); padding: 5px; border-radius: 6px; display: flex; transition: all 150ms; }
 .icon-btn:hover { color: var(--c-fg); background: var(--c-muted); }
 .icon-btn.danger:hover { color: #ef4444; background: #fef2f2; }
+
+.rm-btn { background: #ef4444; color: #fff; cursor: pointer; padding: 6px 12px; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: all 150ms; flex-shrink: 0; border: none; font-size: 13px; font-weight: 600; }
+.rm-btn:hover { background: #dc2626; }
+
+/* Confirm Dialog */
+.confirm-modal {
+  width: 360px;
+  max-width: 90vw;
+  padding: 24px;
+  text-align: center;
+}
+
+.confirm-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(239,68,68,0.1);
+  color: #ef4444;
+}
+
+.confirm-icon.warning {
+  background: rgba(251, 191, 36, 0.1);
+  color: #fbbf24;
+}
+
+.confirm-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--c-fg);
+  margin-bottom: 8px;
+}
+
+.confirm-message {
+  font-size: 13px;
+  color: var(--c-secondary);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.confirm-btn {
+  padding: 10px 24px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms;
+  border: none;
+}
+
+.confirm-btn.cancel {
+  background: var(--c-muted);
+  color: var(--c-secondary);
+}
+
+.confirm-btn.cancel:hover {
+  background: var(--c-border);
+  color: var(--c-fg);
+}
+
+.confirm-btn.ok {
+  background: #ef4444;
+  color: #fff;
+}
+
+.confirm-btn.ok:hover {
+  background: #dc2626;
+}
+
+/* Alert Dialog */
+.alert-modal {
+  width: 360px;
+  max-width: 90vw;
+  padding: 24px;
+  text-align: center;
+}
+
+.alert-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+}
+
+.alert-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--c-fg);
+  margin-bottom: 8px;
+}
+
+.alert-message {
+  font-size: 13px;
+  color: var(--c-secondary);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.alert-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.alert-btn {
+  padding: 10px 24px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms;
+  border: none;
+}
+
+.alert-btn.cancel {
+  background: var(--c-muted);
+  color: var(--c-fg);
+}
+
+.alert-btn.cancel:hover {
+  background: var(--c-border);
+}
+
+.alert-btn.ok {
+  background: #ef4444;
+  color: #fff;
+}
+
+.alert-btn.ok:hover {
+  background: #dc2626;
+}
 
 /* Cards */
 .kb-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }

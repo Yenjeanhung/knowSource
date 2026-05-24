@@ -158,6 +158,7 @@ async def create_crawl_job(req: CreateCrawlJobRequest, db: AsyncSession = Depend
             auto_attach_kb_id=req.auto_attach_kb_id,
             auto_process=req.auto_process,
             extract_graph=req.extract_graph,
+            analysis_depth=req.analysis_depth,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc))
@@ -168,4 +169,10 @@ async def get_crawl_job(job_id: str, db: AsyncSession = Depends(get_db)):
     result = await CrawlService.get_job(db, job_id)
     if not result:
         raise HTTPException(404, "Crawl job not found")
+    return result
+
+
+@router.get("/crawl-jobs/latest")
+async def get_latest_crawl_job(db: AsyncSession = Depends(get_db)):
+    result = await CrawlService.get_latest_job(db)
     return result

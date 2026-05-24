@@ -993,6 +993,31 @@ class FileService:
         return True
 
     @staticmethod
+    async def batch_delete(db: AsyncSession, file_ids: list[str]) -> dict:
+        deleted_count = 0
+        not_found_count = 0
+        
+        for file_id in file_ids:
+            file = await db.get(File, file_id)
+            if not file:
+                not_found_count += 1
+                logger.warning("Batch delete: file_id=%s not found", file_id)
+                continue
+            
+            try:
+                await FileService._delete_index_artifacts(db, file, remove_source_file=True)
+                await db.delete(file)
+                deleted_count += 1
+            except Exception as e:
+                logger.exception("Batch delete failed for file_id=%s: %s", file_id, e)
+        
+        if deleted_count > 0:
+            await db.commit()
+        
+        logger.info("Batch delete completed: deleted=%d not_found=%d", deleted_count, not_found_count)
+        return {"deleted": deleted_count, "not_found": not_found_count}
+
+    @staticmethod
     async def cleanup_zombie_tasks(db: AsyncSession):
         """清理僵尸任务：后端重启后，状态仍为 processing 的文件实际上没有在处理"""
         result = await db.execute(select(File).where(File.status == "processing"))

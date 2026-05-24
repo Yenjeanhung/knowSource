@@ -1,16 +1,19 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import AssetPickerTreeNode from './AssetPickerTreeNode.vue'
 import {
   attachAssetsToKb,
   fetchAssets,
   getKb,
   deleteFile as apiDeleteFile,
+  batchDeleteFiles,
   uploadChunk,
   processFile,
   reprocessFile,
   getFileStatus,
   cancelProcessing,
+  fetchDirectories,
 } from '../api'
 
 const CHUNK_SIZE = 512 * 1024
@@ -30,6 +33,8 @@ const nowTick = ref(Date.now())
 const pollTimers = {}
 let clockTimer = null
 const stageTimers = ref({})
+const collapsedFiles = ref(new Set()) // 记录已折叠的文件
+const selectedFileIds = ref(new Set()) // 批量选择的文件ID
 
 const STAGE_ORDER = ['chunking', 'vectorizing', 'extraction']
 
@@ -64,6 +69,26 @@ const showAssetPicker = ref(false)
 const assetPickerSearch = ref('')
 const assetOptions = ref([])
 const selectedAssetIds = ref(new Set())
+const directories = ref([])
+const selectedDirectoryId = ref('')
+const expandedDirectories = ref(new Set())
+
+// 构建文件夹树
+const directoryTree = computed(() => {
+  const children = new Map()
+  for (const item of directories.value) {
+    const key = item.parent_id || ''
+    if (!children.has(key)) children.set(key, [])
+    children.get(key).push(item)
+  }
+  const build = (parentId) => {
+    return (children.get(parentId) || []).map(item => ({
+      ...item,
+      children: build(item.id)
+    }))
+  }
+  return build('')
+})
 
 // Confirm dialog state
 const showConfirmDialog = ref(false)
@@ -74,6 +99,58 @@ const confirmDialogCancelText = ref('取消')
 let confirmDialogCallback = null
 
 const uploadedCount = computed(() => files.value.filter(item => item.status === 'uploaded').length)
+const selectedCount = computed(() => selectedFileIds.value.size)
+
+function toggleSelectFile(fileId) {
+  if (selectedFileIds.value.has(fileId)) {
+    selectedFileIds.value.delete(fileId)
+  } else {
+    selectedFileIds.value.add(fileId)
+  }
+  selectedFileIds.value = new Set(selectedFileIds.value)
+}
+
+function toggleSelectAll() {
+  const allIds = new Set(files.value.map(f => f.id))
+  if (selectedFileIds.value.size === files.value.length) {
+    selectedFileIds.value = new Set()
+  } else {
+    selectedFileIds.value = allIds
+  }
+}
+
+async function batchDeleteSelected() {
+  if (selectedFileIds.value.size === 0) return
+  
+  const confirmed = await showConfirm(
+    '批量删除文件',
+    `确定要删除选中的 ${selectedFileIds.value.size} 个文件吗？这将删除所有相关的分片、向量和图谱数据，且无法恢复。`,
+    '删除文件',
+    '取消'
+  )
+  if (!confirmed) return
+  
+  const fileIds = Array.from(selectedFileIds.value)
+  
+  // 清理定时器
+  for (const fileId of fileIds) {
+    if (pollTimers[fileId]) {
+      clearInterval(pollTimers[fileId])
+      delete pollTimers[fileId]
+    }
+    delete processing.value[fileId]
+    collapsedFiles.value.delete(fileId)
+  }
+  
+  try {
+    await batchDeleteFiles(fileIds)
+  } catch (e) {
+    console.error('Batch delete failed:', e)
+  }
+  
+  files.value = files.value.filter(f => !selectedFileIds.value.has(f.id))
+  selectedFileIds.value = new Set()
+}
 
 onMounted(async () => {
   try {
@@ -81,6 +158,8 @@ onMounted(async () => {
     files.value = (kb.value.files || []).map(normalizeFile)
     for (const file of files.value) {
       if (file.status === 'processing') startPolling(file.id)
+      // 处理完成的文件默认折叠
+      if (file.status === 'indexed') collapsedFiles.value.add(file.id)
     }
   } catch {}
   clockTimer = setInterval(() => {
@@ -115,17 +194,42 @@ function triggerUpload() {
 async function openAssetPicker() {
   showAssetPicker.value = true
   selectedAssetIds.value = new Set()
+  selectedDirectoryId.value = ''
+  await loadDirectories()
   await loadAssetOptions()
+}
+
+async function loadDirectories() {
+  try {
+    directories.value = await fetchDirectories()
+  } catch {
+    directories.value = []
+  }
 }
 
 async function loadAssetOptions() {
   try {
-    const items = await fetchAssets({ q: assetPickerSearch.value })
+    const items = await fetchAssets({ directoryId: selectedDirectoryId.value, q: assetPickerSearch.value })
     const attachedAssetIds = new Set(files.value.map(item => item.asset_id).filter(Boolean))
     assetOptions.value = items.filter(item => item.status === 'ready' && !attachedAssetIds.has(item.id))
   } catch {
     assetOptions.value = []
   }
+}
+
+function toggleDirectory(directoryId) {
+  const next = new Set(expandedDirectories.value)
+  if (next.has(directoryId)) {
+    next.delete(directoryId)
+  } else {
+    next.add(directoryId)
+  }
+  expandedDirectories.value = next
+}
+
+function selectDirectory(directoryId) {
+  selectedDirectoryId.value = directoryId
+  loadAssetOptions()
 }
 
 function toggleAssetPick(assetId) {
@@ -343,7 +447,11 @@ async function syncFileStatus(fileId, timer = null) {
         clearInterval(pollTimers[fileId])
         delete pollTimers[fileId]
       }
-      if (target && data.status === 'indexed') delete processing.value[fileId]
+      if (target && data.status === 'indexed') {
+        delete processing.value[fileId]
+        // 处理完成后自动折叠面板
+        collapsedFiles.value.add(fileId)
+      }
       return true
     }
   } catch {
@@ -546,7 +654,7 @@ function stageIconClass(file, stageName) {
 <template>
   <div>
     <div class="page-head">
-      <button class="back-btn" @click="router.push('/')">
+      <button class="back-btn" @click="router.push('/kb')">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="m15 18-6-6 6-6" />
         </svg>
@@ -595,15 +703,27 @@ function stageIconClass(file, stageName) {
         </svg>
         文件列表 · {{ files.length }}
       </span>
-      <div class="batch-wrap" v-if="uploadedCount > 1">
-        <button class="batch-btn" @click="batchProcess(true)">
+      <div class="batch-wrap" v-if="files.length > 0">
+        <label class="select-all" v-if="files.length > 1">
+          <input type="checkbox" :checked="selectedCount === files.length" @change="toggleSelectAll" />
+          <span>全选</span>
+        </label>
+        <button v-if="selectedCount > 0" class="batch-btn batch-delete" @click="batchDeleteSelected">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 6h18" />
+            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+          </svg>
+          批量删除 ({{ selectedCount }})
+        </button>
+        <button v-if="uploadedCount > 1" class="batch-btn" @click="batchProcess(true)">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="13 2 3 14 12 14 19 8" />
             <polyline points="3 22 12 13 21 22" />
           </svg>
           批量处理 ({{ uploadedCount }})
         </button>
-        <button class="batch-btn batch-fast" @click="batchProcess(false)" title="仅分片，不抽取图谱">
+        <button v-if="uploadedCount > 1" class="batch-btn batch-fast" @click="batchProcess(false)" title="仅分片，不抽取图谱">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="5 12 10 17 19 8" />
           </svg>
@@ -615,6 +735,9 @@ function stageIconClass(file, stageName) {
     <div class="file-list" v-if="files.length">
       <div class="file-card" v-for="file in files" :key="file.id">
         <div class="file-main">
+          <label class="file-checkbox" v-if="files.length > 1">
+            <input type="checkbox" :checked="selectedFileIds.has(file.id)" @change="toggleSelectFile(file.id)" />
+          </label>
           <div class="status-lamp" :class="file.status" :title="getStatusTitle(file.status)"></div>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="ft-icon">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -671,7 +794,12 @@ function stageIconClass(file, stageName) {
           </button>
         </div>
 
-        <div class="process-panel" v-if="file.status === 'processing' || file.status === 'indexed' || file.status === 'failed'">
+        <div class="process-panel" v-if="(file.status === 'processing' || file.status === 'indexed' || file.status === 'failed') && !collapsedFiles.has(file.id)">
+          <button class="collapse-btn" @click="collapsedFiles.add(file.id)" title="折叠">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
           <div class="terminal">
             <div class="terminal-bar">
             <span class="terminal-title">
@@ -780,6 +908,16 @@ function stageIconClass(file, stageName) {
           </div>
         </div>
 
+        <!-- 展开按钮 - 当处理面板被折叠时显示 -->
+        <div class="expand-hint" v-if="(file.status === 'indexed' || file.status === 'failed') && collapsedFiles.has(file.id)">
+          <button class="expand-btn" @click="collapsedFiles.delete(file.id)" title="展开详情">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 15 12 9 18 15" />
+            </svg>
+            点击查看处理详情
+          </button>
+        </div>
+
       </div>
     </div>
 
@@ -864,7 +1002,7 @@ function stageIconClass(file, stageName) {
       </div>
 
       <div class="dialog-overlay" v-if="showAssetPicker" @click.self="showAssetPicker = false">
-        <div class="dialog-card asset-picker-card">
+        <div class="dialog-card asset-picker-card" style="width: 90vw; max-width: 1000px;">
           <div class="dialog-head">
             <div class="dialog-icon">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -877,28 +1015,61 @@ function stageIconClass(file, stageName) {
               <div class="dialog-sub">选择后会加入当前知识库，等待处理</div>
             </div>
           </div>
-          <div class="asset-picker-tools">
-            <input v-model="assetPickerSearch" type="text" placeholder="搜索文件..." @keydown.enter="loadAssetOptions">
-            <button class="proc-btn" @click="loadAssetOptions">搜索</button>
-          </div>
-          <div class="asset-picker-list" v-if="assetOptions.length">
-            <button
-              v-for="asset in assetOptions"
-              :key="asset.id"
-              class="asset-option"
-              :class="{ selected: selectedAssetIds.has(asset.id) }"
-              @click="toggleAssetPick(asset.id)"
-            >
-              <span class="asset-check">{{ selectedAssetIds.has(asset.id) ? '✓' : '' }}</span>
-              <span class="asset-option-body">
-                <strong>{{ asset.name }}</strong>
-                <small>{{ fmtSize(asset.size) }} · {{ asset.source_type }}</small>
-              </span>
-            </button>
-          </div>
-          <div class="empty-state" v-else>
-            <div class="empty-title">没有可选择的文件</div>
-            <div class="empty-desc">可先到文件管理上传或采集资料</div>
+          <div class="asset-picker-layout">
+            <div class="folder-tree-panel">
+              <div class="folder-tree-title">文件夹</div>
+              <div class="folder-tree-content">
+                <div class="picker-folder-node">
+                  <div
+                    :class="['folder-tree-item', { active: selectedDirectoryId === '' }]"
+                    @click="() => selectDirectory('')"
+                  >
+                    <span class="expand-spacer"></span>
+                    <svg class="folder-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <span class="folder-name">全部文件</span>
+                  </div>
+                </div>
+                <AssetPickerTreeNode
+                  v-for="node in directoryTree"
+                  :key="node.id"
+                  :node="node"
+                  :expanded="expandedDirectories"
+                  :selected-id="selectedDirectoryId"
+                  @toggle="toggleDirectory"
+                  @select="selectDirectory"
+                />
+              </div>
+            </div>
+            <div class="assets-panel">
+              <div class="assets-header">
+                <div class="assets-title">文件列表</div>
+                <div class="asset-picker-tools">
+                  <input v-model="assetPickerSearch" type="text" placeholder="搜索文件..." @keydown.enter="loadAssetOptions">
+                  <button class="proc-btn" @click="loadAssetOptions">搜索</button>
+                </div>
+              </div>
+              <div class="asset-picker-list" v-if="assetOptions.length">
+                <button
+                  v-for="asset in assetOptions"
+                  :key="asset.id"
+                  class="asset-option"
+                  :class="{ selected: selectedAssetIds.has(asset.id) }"
+                  @click="toggleAssetPick(asset.id)"
+                >
+                  <span class="asset-check">{{ selectedAssetIds.has(asset.id) ? '✓' : '' }}</span>
+                  <span class="asset-option-body">
+                    <strong>{{ asset.name }}</strong>
+                    <small>{{ fmtSize(asset.size) }} · {{ asset.source_type }}</small>
+                  </span>
+                </button>
+              </div>
+              <div class="empty-state" v-else>
+                <div class="empty-title">没有可选择的文件</div>
+                <div class="empty-desc">可先到文件管理上传或采集资料</div>
+              </div>
+            </div>
           </div>
           <div class="asset-picker-actions">
             <button class="confirm-btn cancel" @click="showAssetPicker = false">取消</button>
@@ -963,15 +1134,69 @@ h1 { font-size: 18px; font-weight: 700; }
 
 .sec-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .sec-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--c-secondary); text-transform: uppercase; letter-spacing: 0.5px; flex: 1; }
-.batch-wrap { display: flex; gap: 6px; }
+.batch-wrap { display: flex; align-items: center; gap: 10px; }
+.select-all { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--c-secondary); cursor: pointer; }
+.select-all input[type="checkbox"] { width: 14px; height: 14px; cursor: pointer; }
 .batch-btn { display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; font-size: 11px; font-weight: 600; border-radius: 6px; border: 1px solid #6366f1; background: transparent; color: #6366f1; cursor: pointer; transition: all 150ms; }
 .batch-btn:hover { background: #6366f1; color: #fff; }
 .batch-btn.batch-fast { border-color: #64748b; color: #64748b; }
 .batch-btn.batch-fast:hover { background: #64748b; color: #fff; }
+.batch-btn.batch-delete { border-color: #ef4444; color: #ef4444; }
+.batch-btn.batch-delete:hover { background: #ef4444; color: #fff; }
 
 .file-list { display: flex; flex-direction: column; gap: 10px; }
 .file-card { border-radius: 18px; border: 1px solid var(--c-border); background: var(--c-panel); overflow: hidden; }
 .file-main { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+.file-checkbox { flex-shrink: 0; }
+.file-checkbox input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #6366f1; }
+
+/* 折叠/展开按钮 */
+.process-panel {
+  position: relative;
+}
+.collapse-btn {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 4px;
+  border: none;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  color: #9ca3af;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 150ms;
+}
+.process-panel:hover .collapse-btn {
+  opacity: 1;
+}
+.collapse-btn:hover {
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+}
+
+.expand-hint {
+  padding: 8px 14px;
+  background: var(--c-muted);
+  border-top: 1px solid var(--c-border);
+}
+.expand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  color: var(--c-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 150ms;
+}
+.expand-btn:hover {
+  background: var(--c-panel);
+  color: var(--c-fg);
+}
 /* === 3D效果状态灯 === */
 .status-lamp {
   width: 24px;
@@ -1148,7 +1373,26 @@ h1 { font-size: 18px; font-weight: 700; }
 .proc-btn-retry { border-color: #64748b; color: #64748b; }
 .proc-btn-retry:hover { background: #64748b; color: #fff; }
 
-.rm-btn, .cancel-btn { 
+.rm-btn { 
+  background: #ef4444; 
+  color: #fff; 
+  cursor: pointer; 
+  padding: 6px 12px; 
+  border-radius: 6px; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  transition: all 150ms; 
+  flex-shrink: 0; 
+  border: none; 
+  font-size: 13px; 
+  font-weight: 600; 
+}
+.rm-btn:hover { 
+  background: #dc2626; 
+}
+
+.cancel-btn { 
   background: none; 
   border: 1px solid #ef4444; 
   cursor: pointer; 
@@ -1161,7 +1405,7 @@ h1 { font-size: 18px; font-weight: 700; }
   transition: all 150ms; 
   flex-shrink: 0; 
 }
-.rm-btn:hover, .cancel-btn:hover { 
+.cancel-btn:hover { 
   background: #ef4444; 
   color: #fff; 
 }
@@ -1744,5 +1988,126 @@ h1 { font-size: 18px; font-weight: 700; }
   justify-content: flex-end;
   gap: 10px;
   padding: 0 18px 18px;
+}
+
+.asset-picker-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  border-top: 1px solid var(--c-border);
+  border-bottom: 1px solid var(--c-border);
+  min-height: 400px;
+}
+
+.folder-tree-panel {
+  border-right: 1px solid var(--c-border);
+  padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.folder-tree-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.folder-tree-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.assets-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.assets-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.assets-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.assets-header .asset-picker-tools {
+  padding: 0;
+  border-bottom: none;
+  flex: 1;
+}
+
+.folder-tree-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--c-secondary);
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  transition: background 150ms;
+}
+
+.folder-tree-item:hover,
+.folder-tree-item.active {
+  background: var(--c-muted);
+  color: var(--c-fg);
+}
+
+.folder-icon {
+  width: 18px;
+  flex-shrink: 0;
+  color: var(--c-secondary);
+}
+
+.folder-name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.expand-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 150ms;
+  flex-shrink: 0;
+}
+
+.expand-btn:hover {
+  background: var(--c-muted);
+}
+
+.expand-spacer {
+  width: 22px;
+  flex-shrink: 0;
 }
 </style>
