@@ -65,6 +65,7 @@ const showProcessDialog = ref(false)
 const pendingFileId = ref('')
 const pendingFileName = ref('')
 const pendingProcessMode = ref('process')
+const isBatchProcess = ref(false)
 const showAssetPicker = ref(false)
 const assetPickerSearch = ref('')
 const assetOptions = ref([])
@@ -98,7 +99,7 @@ const confirmDialogConfirmText = ref('确定')
 const confirmDialogCancelText = ref('取消')
 let confirmDialogCallback = null
 
-const uploadedCount = computed(() => files.value.filter(item => item.status === 'uploaded').length)
+const uploadedCount = computed(() => files.value.filter(item => item.status === 'uploaded' || item.status === 'failed').length)
 const selectedCount = computed(() => selectedFileIds.value.size)
 
 function toggleSelectFile(fileId) {
@@ -333,6 +334,7 @@ function openProcessDialog(file) {
   pendingFileId.value = file.id
   pendingFileName.value = file.name
   pendingProcessMode.value = 'process'
+  isBatchProcess.value = false
   showProcessDialog.value = true
 }
 
@@ -340,63 +342,83 @@ function openReprocessDialog(file) {
   pendingFileId.value = file.id
   pendingFileName.value = file.name
   pendingProcessMode.value = 'reprocess'
+  isBatchProcess.value = false
+  showProcessDialog.value = true
+}
+
+function openBatchProcessDialog() {
+  isBatchProcess.value = true
+  pendingFileId.value = ''
+  pendingFileName.value = ''
+  pendingProcessMode.value = 'process'
   showProcessDialog.value = true
 }
 
 async function confirmProcess(extractGraph) {
   showProcessDialog.value = false
-  const fileId = pendingFileId.value
-  if (!fileId) return
-  try {
-    const runner = pendingProcessMode.value === 'reprocess' ? reprocessFile : processFile
-    await runner(fileId, { extractGraph })
-    const target = files.value.find(item => item.id === fileId)
-    if (target) {
-      target.status = 'processing'
-      target.message = pendingProcessMode.value === 'reprocess'
-        ? (extractGraph ? '准备重新处理（含图谱抽取）' : '准备重新处理（跳过图谱）')
-        : (extractGraph ? '准备开始处理（含图谱抽取）' : '准备开始处理（跳过图谱）')
-      target.logs = []
-      target.detail = {
-        started_at: new Date().toISOString(),
-        finished_at: null,
-        elapsed_ms: 0,
-        stage: 'preparing',
-        summary: { chunk_count: 0, entity_count: 0, relation_count: 0 },
-        stages: {
-          total: { progress: 0, label: '准备开始处理' },
-          chunking: { progress: 0, current: 0, total: 0, label: '等待开始' },
-          extraction: {
-            progress: extractGraph ? 0 : 100,
-            processed_batches: 0,
-            total_batches: 0,
-            started_batches: 0,
-            running_batches: 0,
-            processed_chunks: 0,
-            total_candidate_chunks: 0,
-            entity_count: 0,
-            relation_count: 0,
-            label: extractGraph ? '等待开始' : '已跳过',
+  
+  if (isBatchProcess.value) {
+    await batchProcess(extractGraph)
+  } else {
+    const fileId = pendingFileId.value
+    if (!fileId) return
+    try {
+      const runner = pendingProcessMode.value === 'reprocess' ? reprocessFile : processFile
+      await runner(fileId, { extractGraph })
+      const target = files.value.find(item => item.id === fileId)
+      if (target) {
+        target.status = 'processing'
+        target.message = pendingProcessMode.value === 'reprocess'
+          ? (extractGraph ? '准备重新处理（含图谱抽取）' : '准备重新处理（跳过图谱）')
+          : (extractGraph ? '准备开始处理（含图谱抽取）' : '准备开始处理（跳过图谱）')
+        target.logs = []
+        target.detail = {
+          started_at: new Date().toISOString(),
+          finished_at: null,
+          elapsed_ms: 0,
+          stage: 'preparing',
+          summary: { chunk_count: 0, entity_count: 0, relation_count: 0 },
+          stages: {
+            total: { progress: 0, label: '准备开始处理' },
+            chunking: { progress: 0, current: 0, total: 0, label: '等待开始' },
+            extraction: {
+              progress: extractGraph ? 0 : 100,
+              processed_batches: 0,
+              total_batches: 0,
+              started_batches: 0,
+              running_batches: 0,
+              processed_chunks: 0,
+              total_candidate_chunks: 0,
+              entity_count: 0,
+              relation_count: 0,
+              label: extractGraph ? '等待开始' : '已跳过',
+            },
           },
-        },
+        }
       }
-    }
-    processing.value[fileId] = 0
-    startPolling(fileId)
-  } catch {}
+      processing.value[fileId] = 0
+      startPolling(fileId)
+    } catch {}
+  }
+  
   pendingFileId.value = ''
   pendingFileName.value = ''
   pendingProcessMode.value = 'process'
+  isBatchProcess.value = false
 }
 
 async function batchProcess(extractGraph = true) {
-  for (const file of files.value.filter(item => item.status === 'uploaded')) {
+  for (const file of files.value.filter(item => item.status === 'uploaded' || item.status === 'failed')) {
     try {
-      await processFile(file.id, { extractGraph })
+      const isReprocess = file.status === 'failed'
+      const runner = isReprocess ? reprocessFile : processFile
+      await runner(file.id, { extractGraph })
       const target = files.value.find(item => item.id === file.id)
       if (target) {
         target.status = 'processing'
-        target.message = extractGraph ? '准备开始处理（含图谱抽取）' : '准备开始处理（跳过图谱）'
+        target.message = isReprocess
+          ? (extractGraph ? '准备重新处理（含图谱抽取）' : '准备重新处理（跳过图谱）')
+          : (extractGraph ? '准备开始处理（含图谱抽取）' : '准备开始处理（跳过图谱）')
         target.logs = []
         target.detail = {
           started_at: new Date().toISOString(),
@@ -716,18 +738,12 @@ function stageIconClass(file, stageName) {
           </svg>
           批量删除 ({{ selectedCount }})
         </button>
-        <button v-if="uploadedCount > 1" class="batch-btn" @click="batchProcess(true)">
+        <button v-if="uploadedCount > 1" class="batch-btn" @click="openBatchProcessDialog">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="13 2 3 14 12 14 19 8" />
             <polyline points="3 22 12 13 21 22" />
           </svg>
           批量处理 ({{ uploadedCount }})
-        </button>
-        <button v-if="uploadedCount > 1" class="batch-btn batch-fast" @click="batchProcess(false)" title="仅分片，不抽取图谱">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="5 12 10 17 19 8" />
-          </svg>
-          快速分片
         </button>
       </div>
     </div>
@@ -909,12 +925,13 @@ function stageIconClass(file, stageName) {
         </div>
 
         <!-- 展开按钮 - 当处理面板被折叠时显示 -->
-        <div class="expand-hint" v-if="(file.status === 'indexed' || file.status === 'failed') && collapsedFiles.has(file.id)">
+        <div class="expand-hint" v-if="(file.status === 'processing' || file.status === 'indexed' || file.status === 'failed') && collapsedFiles.has(file.id)">
           <button class="expand-btn" @click="collapsedFiles.delete(file.id)" title="展开详情">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="6 15 12 9 18 15" />
             </svg>
-            点击查看处理详情
+            <span v-if="file.status === 'processing'">点击查看处理进度</span>
+            <span v-else>点击查看处理详情</span>
           </button>
         </div>
 
@@ -943,7 +960,7 @@ function stageIconClass(file, stageName) {
             </div>
             <div>
               <div class="dialog-title">选择处理模式</div>
-              <div class="dialog-sub">{{ pendingFileName }}</div>
+              <div class="dialog-sub">{{ isBatchProcess ? `批量处理 ${uploadedCount} 个文件` : pendingFileName }}</div>
             </div>
           </div>
           <div class="dialog-body">
@@ -959,7 +976,7 @@ function stageIconClass(file, stageName) {
                 </svg>
               </div>
               <div class="mode-text">
-                <strong>{{ pendingProcessMode === 'reprocess' ? '重新分片 + 抽取图谱' : '分片 + 抽取图谱' }}</strong>
+                <strong>{{ isBatchProcess ? '分片 + 抽取图谱' : (pendingProcessMode === 'reprocess' ? '重新分片 + 抽取图谱' : '分片 + 抽取图谱') }}</strong>
                 <span>切分文本、生成向量，并调用 LLM 抽取实体与关系写入图数据库</span>
               </div>
               <span class="mode-arrow">&rarr;</span>
@@ -974,7 +991,7 @@ function stageIconClass(file, stageName) {
                 </svg>
               </div>
               <div class="mode-text">
-                <strong>{{ pendingProcessMode === 'reprocess' ? '重新分片（更快）' : '仅分片（更快）' }}</strong>
+                <strong>{{ isBatchProcess ? '仅分片（更快）' : (pendingProcessMode === 'reprocess' ? '重新分片（更快）' : '仅分片（更快）') }}</strong>
                 <span>只切分文本并生成向量，不调用 LLM，速度更快</span>
               </div>
               <span class="mode-arrow">&rarr;</span>

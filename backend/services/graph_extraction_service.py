@@ -180,27 +180,37 @@ class GraphExtractionService:
                     return batch, payload, False
                 except Exception as exc:
                     duration = perf_counter() - batch_started
-                    logger.warning(
+                    error_msg = str(exc)
+                    # 检查是否包含HTTP错误信息
+                    if "502" in error_msg or "Bad Gateway" in error_msg:
+                        error_detail = f"大模型服务调用失败: POST http://192.168.20.67:3000/v1/chat/completions - HTTP/1.1 502 Bad Gateway"
+                    else:
+                        error_detail = f"抽取失败: {error_msg}"
+                    logger.error(
                         "Graph extraction batch failed: file_name=%s batch=%s/%s chunk_count=%s duration_ms=%.0f error=%s",
                         file_name,
                         batch_index + 1,
                         total_batches,
                         len(batch),
                         duration * 1000,
-                        exc,
+                        error_detail,
                     )
                     if log_callback:
                         await log_callback(
-                            f"抽取失败：批次 {batch_index + 1}/{total_batches}，耗时 {duration:.1f}s，错误 {exc}"
+                            f"抽取失败：批次 {batch_index + 1}/{total_batches}，耗时 {duration:.1f}s，{error_detail}"
                         )
                     return batch, {"chunks": []}, True
 
         failed_batches = 0
+        first_error = None
         tasks = [asyncio.create_task(run_batch(index, batch)) for index, batch in enumerate(batches)]
         for future in asyncio.as_completed(tasks):
             batch, payload, is_failed = await future
             if is_failed:
                 failed_batches += 1
+                # 如果是第一个失败的批次，记录错误信息
+                if first_error is None:
+                    first_error = f"Graph extraction batch failed: batch={len(batch)} chunks"
             GraphExtractionService._merge_payload(chunk_map, payload)
             async with progress_lock:
                 processed_batches += 1
@@ -223,13 +233,12 @@ class GraphExtractionService:
                 )
 
         if failed_batches > 0:
-            error_message = f"Graph extraction partially failed: {failed_batches}/{total_batches} batches failed"
+            error_message = f"Graph extraction failed: {failed_batches}/{total_batches} batches failed"
             logger.error(error_message)
             if log_callback:
-                await log_callback(f"抽取阶段部分失败：{failed_batches}/{total_batches} 个批次失败")
-            # 如果超过一半批次失败，抛出异常
-            if failed_batches > total_batches // 2:
-                raise RuntimeError(f"Graph extraction failed: {failed_batches}/{total_batches} batches failed")
+                await log_callback(f"抽取阶段失败：{failed_batches}/{total_batches} 个批次失败")
+            # 只要有失败的批次就抛出异常
+            raise RuntimeError(first_error or error_message)
 
         logger.info(
             "Graph extraction finished: file_name=%s total_chunks=%s candidate_chunks=%s total_batches=%s failed_batches=%s duration_ms=%.0f",

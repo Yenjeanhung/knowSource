@@ -73,6 +73,10 @@ def setup_logging():
     error_handler.setFormatter(formatter)
     root_logger.addHandler(error_handler)
 
+    # 设置httpx日志级别为ERROR，避免INFO级别的HTTP请求日志刷屏
+    httpx_logger = logging.getLogger("httpx")
+    httpx_logger.setLevel(logging.ERROR)
+
 # 初始化日志配置
 setup_logging()
 logger = logging.getLogger(__name__)

@@ -929,8 +929,27 @@ class FileService:
                             log_level="error",
                             finished=True,
                         )
-                except Exception:
-                    pass
+                        await db.commit()
+                except Exception as inner_exc:
+                    logger.exception("Failed to update file status in original session: file_id=%s error=%s", file_id, inner_exc)
+                    try:
+                        async with async_session() as new_db:
+                            file = await new_db.get(File, file_id)
+                            if file:
+                                await FileService._delete_index_artifacts(new_db, file, remove_source_file=False)
+                                await FileService._commit_runtime_state(
+                                    new_db,
+                                    file,
+                                    status="failed",
+                                    message=str(exc)[:200],
+                                    stage="failed",
+                                    log_message=f"处理失败：{exc}",
+                                    log_level="error",
+                                    finished=True,
+                                )
+                                await new_db.commit()
+                    except Exception as new_exc:
+                        logger.exception("Failed to update file status in new session: file_id=%s error=%s", file_id, new_exc)
 
     @staticmethod
     async def list_all(db: AsyncSession) -> list[dict]:
