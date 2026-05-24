@@ -650,7 +650,12 @@ onUnmounted(() => {
                 <span class="source-chip">{{ sourceLabel(asset.source_type) }}</span>
                 <a v-if="asset.source_url" :href="asset.source_url" target="_blank" rel="noreferrer">来源</a>
               </div>
-              <div class="asset-kb">{{ asset.kb_file_count || 0 }}</div>
+              <div class="asset-kb">
+                <template v-if="asset.kb_names && asset.kb_names.length">
+                  <span v-for="(name, i) in asset.kb_names" :key="i" class="kb-tag">{{ name }}</span>
+                </template>
+                <span v-else class="kb-none">—</span>
+              </div>
               <div class="asset-actions">
                 <button class="icon-btn" title="预览" @click="openPreview(asset)">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -897,7 +902,7 @@ onUnmounted(() => {
 .mini-bar { height: 4px; background: var(--c-muted); border-radius: 999px; overflow: hidden; }
 .mini-bar div { height: 100%; background: var(--c-accent); }
 .asset-table { border: 1px solid var(--c-border); border-radius: 8px; overflow: hidden; background: var(--c-panel); }
-.table-head, .asset-row { display: grid; grid-template-columns: 44px minmax(260px, 1fr) 140px 80px 92px; align-items: center; gap: 10px; padding: 10px 12px; }
+.table-head, .asset-row { display: grid; grid-template-columns: 44px minmax(260px, 1fr) 140px 180px 92px; align-items: center; gap: 10px; padding: 10px 12px; }
 .table-head { background: var(--c-muted); color: var(--c-secondary); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
 .asset-row + .asset-row { border-top: 1px solid var(--c-border); }
 .asset-row:hover, .asset-row.selected { background: var(--c-muted); }
@@ -910,7 +915,9 @@ onUnmounted(() => {
 .asset-source { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .source-chip { padding: 2px 7px; border-radius: 999px; background: var(--c-muted); color: var(--c-secondary); font-weight: 600; }
 .asset-source a { color: var(--c-accent); text-decoration: none; }
-.asset-kb { font-size: 13px; color: var(--c-secondary); }
+.asset-kb { display: flex; flex-wrap: wrap; gap: 4px; }
+.kb-tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; background: var(--c-muted); color: var(--c-text); white-space: nowrap; }
+.kb-none { font-size: 13px; color: var(--c-secondary); }
 .asset-actions { display: flex; gap: 4px; }
 
 .modal-mask { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; background: var(--c-overlay); padding: 24px; }

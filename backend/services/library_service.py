@@ -30,7 +30,13 @@ def _hash_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _asset_to_dict(asset: FileAsset, kb_file_count: int | None = None) -> dict:
+def _asset_to_dict(asset: FileAsset) -> dict:
+    seen: set[str] = set()
+    kb_names: list[str] = []
+    for f in asset.kb_files:
+        if f.kb and f.kb.name not in seen:
+            seen.add(f.kb.name)
+            kb_names.append(f.kb.name)
     return {
         "id": asset.id,
         "directory_id": asset.directory_id,
@@ -47,7 +53,8 @@ def _asset_to_dict(asset: FileAsset, kb_file_count: int | None = None) -> dict:
         "message": asset.message,
         "created_at": asset.created_at,
         "updated_at": asset.updated_at,
-        "kb_file_count": kb_file_count,
+        "kb_file_count": len(asset.kb_files),
+        "kb_names": kb_names,
     }
 
 
@@ -300,7 +307,11 @@ class LibraryService:
         directory_id: str | None = None,
         q: str | None = None,
     ) -> list[dict]:
-        stmt = select(FileAsset).options(selectinload(FileAsset.kb_files)).order_by(FileAsset.created_at.desc())
+        stmt = (
+            select(FileAsset)
+            .options(selectinload(FileAsset.kb_files).selectinload(File.kb))
+            .order_by(FileAsset.created_at.desc())
+        )
         if directory_id:
             stmt = stmt.where(FileAsset.directory_id == directory_id)
         if q:
@@ -311,7 +322,7 @@ class LibraryService:
                 | (FileAsset.source_keyword.like(pattern))
             )
         result = await db.execute(stmt)
-        return [_asset_to_dict(asset, len(asset.kb_files)) for asset in result.scalars().all()]
+        return [_asset_to_dict(asset) for asset in result.scalars().all()]
 
     @staticmethod
     async def get_asset(db: AsyncSession, asset_id: str) -> FileAsset | None:
