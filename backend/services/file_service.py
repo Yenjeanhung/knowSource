@@ -794,10 +794,12 @@ class FileService:
                         if not should_flush:
                             return
                         last_log_flush["ts"] = now
+                        log_level = "error" if "失败" in message or "错误" in message else "info"
                         await FileService._commit_runtime_state(
                             db,
                             file,
                             log_message=message,
+                            log_level=log_level,
                             message=file.message,
                         )
 
