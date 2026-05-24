@@ -251,12 +251,25 @@ class GraphExtractionService:
             raise
 
         if failed_batches > 0:
-            error_message = f"Graph extraction failed: {failed_batches}/{total_batches} batches failed"
-            logger.error(error_message)
+            if failed_batches == total_batches:
+                error_message = f"Graph extraction failed: all {total_batches} batches failed"
+                logger.error(error_message)
+                if log_callback:
+                    await log_callback(f"抽取阶段失败：全部 {total_batches} 个批次均未成功")
+                raise RuntimeError(error_message)
+            logger.warning(
+                "Graph extraction partial success: file_name=%s successful=%s/%s failed=%s/%s",
+                file_name,
+                total_batches - failed_batches,
+                total_batches,
+                failed_batches,
+                total_batches,
+            )
             if log_callback:
-                await log_callback(f"抽取阶段失败：{failed_batches}/{total_batches} 个批次失败")
-            # 只要有失败的批次就抛出异常
-            raise RuntimeError(first_error or error_message)
+                await log_callback(
+                    f"抽取阶段部分失败：{failed_batches}/{total_batches} 个批次未成功，"
+                    f"已保留 {total_batches - failed_batches} 个成功批次的数据"
+                )
 
         logger.info(
             "Graph extraction finished: file_name=%s total_chunks=%s candidate_chunks=%s total_batches=%s failed_batches=%s duration_ms=%.0f",
