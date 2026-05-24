@@ -237,7 +237,8 @@ onMounted(() => {
 .app-shell {
   display: flex;
   min-height: 100dvh;
-  max-width: 1152px;
+  width: 100%;
+  max-width: 100%;
   margin: 0;
   overflow: visible;
 }

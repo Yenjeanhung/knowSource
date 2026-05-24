@@ -793,7 +793,7 @@ onUnmounted(() => stopSimulation())
 
 /* Graph mode */
 .graph-mode { padding: 16px; }
-.graph-main { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 14px; align-items: start; }
+.graph-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); gap: 16px; align-items: start; }
 .graph-canvas-wrap { min-width: 0; position: relative; }
 
 .graph-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
@@ -811,7 +811,8 @@ onUnmounted(() => stopSimulation())
     radial-gradient(ellipse at 75% 70%, rgba(120,140,120,0.05), transparent 50%),
     #11161c;
   cursor: grab;
-  min-height: 500px;
+  min-height: 600px;
+  max-height: calc(100vh - 300px);
 }
 .graph-canvas.panning { cursor: grabbing; }
 .graph-svg { width: 100%; display: block; }
