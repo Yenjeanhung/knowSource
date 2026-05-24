@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import AssetPickerTreeNode from './AssetPickerTreeNode.vue'
+import FolderTreeNode from './FolderTreeNode.vue'
 import {
   attachAssetsToKb,
   fetchAssets,
@@ -1024,19 +1024,19 @@ function stageIconClass(file, stageName) {
                     :class="['folder-tree-item', { active: selectedDirectoryId === '' }]"
                     @click="() => selectDirectory('')"
                   >
-                    <span class="expand-spacer"></span>
                     <svg class="folder-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                     </svg>
                     <span class="folder-name">全部文件</span>
                   </div>
                 </div>
-                <AssetPickerTreeNode
+                <FolderTreeNode
                   v-for="node in directoryTree"
                   :key="node.id"
                   :node="node"
                   :expanded="expandedDirectories"
                   :selected-id="selectedDirectoryId"
+                  :show-actions="false"
                   @toggle="toggleDirectory"
                   @select="selectDirectory"
                 />

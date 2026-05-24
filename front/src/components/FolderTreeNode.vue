@@ -4,7 +4,8 @@ import { ref } from 'vue'
 const props = defineProps({
   node: { type: Object, required: true },
   expanded: { type: Set, required: true },
-  selectedId: { type: String, default: '' }
+  selectedId: { type: String, default: '' },
+  showActions: { type: Boolean, default: true }
 })
 
 const emit = defineEmits(['toggle', 'select', 'edit', 'delete'])
@@ -12,6 +13,7 @@ const showMenu = ref(false)
 const menuPosition = ref({ x: 0, y: 0 })
 
 function handleContextMenu(e) {
+  if (!props.showActions) return
   e.preventDefault()
   menuPosition.value = { x: e.clientX, y: e.clientY }
   showMenu.value = true
@@ -62,7 +64,7 @@ function handleDelete() {
       
       <span class="item-name">{{ node.name }}</span>
       
-      <div class="item-actions">
+      <div v-if="showActions" class="item-actions">
         <button class="action-btn edit-btn" @click.stop="emit('edit', node)" title="编辑">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -84,6 +86,7 @@ function handleDelete() {
         v-for="child in node.children"
         :key="child.id"
         :node="child"
+        :show-actions="showActions"
         :expanded="expanded"
         :selected-id="selectedId"
         @toggle="emit('toggle', $event)"

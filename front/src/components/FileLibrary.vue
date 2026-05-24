@@ -327,7 +327,7 @@ function startCrawlPolling() {
 async function restoreCrawlJob() {
   try {
     const job = await getLatestCrawlJob()
-    if (job && (job.status === 'pending' || job.status === 'running')) {
+    if (job && (job.status === 'pending' || job.status === 'running' || job.status === 'queued')) {
       crawlJob.value = job
       startCrawlPolling()
     }
@@ -378,7 +378,6 @@ onUnmounted(() => {
             :class="['tree-root-item', { active: selectedDirectoryId === '' }]"
             @click="selectDirectory('')"
           >
-            <span class="expand-placeholder"></span>
             <svg class="folder-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
             </svg>
@@ -432,6 +431,9 @@ onUnmounted(() => {
             <span v-if="crawlJob.status === 'running' && crawlJob.progress != null">{{ crawlJob.progress }}%</span>
             <div v-if="crawlJob.status === 'running' && crawlJob.progress != null" class="crawl-progress">
               <div :style="{ width: `${crawlJob.progress}%` }"></div>
+            </div>
+            <div v-if="crawlJob.status === 'failed' && crawlJob.message" class="crawl-error">
+              {{ crawlJob.message }}
             </div>
           </div>
         </div>
@@ -687,6 +689,7 @@ onUnmounted(() => {
 .status-dot.failed { background: var(--c-danger); }
 .crawl-progress { grid-column: 1 / -1; height: 4px; background: var(--c-muted); border-radius: 999px; overflow: hidden; }
 .crawl-progress div { height: 100%; background: var(--c-fg); transition: width 220ms ease; }
+.crawl-error { grid-column: 2 / -1; margin-top: 4px; padding: 8px 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px; color: #ef4444; font-size: 12px; }
 .attach-bar { display: flex; gap: 10px; align-items: center; }
 .attach-bar span { flex: 1; font-size: 13px; font-weight: 600; }
 .attach-bar select { min-width: 180px; padding: 7px 10px; border: 1px solid var(--c-border); border-radius: 6px; }
