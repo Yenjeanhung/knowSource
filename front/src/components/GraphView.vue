@@ -36,10 +36,15 @@ const relationPageSize = ref(20)
 const RELATION_PAGE_SIZE_OPTIONS = [10, 20, 50]
 
 const loading = ref(false)
+const loadingMore = ref(false)
 const error = ref('')
 const graphData = ref(null)
 const selectedNodeId = ref('')
 const selectedChunkId = ref('')
+const entityOffset = ref(0)
+const hasMore = ref(false)
+const hasQueried = ref(false)
+const ENTITY_PAGE_SIZE = 200
 
 // Canvas dimensions (fixed world space)
 const WORLD_W = 1600
@@ -521,31 +526,58 @@ async function loadRelationTypes() {
   } catch { relationTypes.value = [] }
 }
 
-async function loadView() {
+async function loadView({ append = false } = {}) {
   if (!selectedKbId.value) { graphData.value = null; return }
-  loading.value = true; error.value = ''
+  const isLoading = append ? loadingMore : loading
+  isLoading.value = true; error.value = ''
   try {
+    const offset = append ? entityOffset.value : 0
     const data = await fetchGraphView({
       kbId: selectedKbId.value, fileId: selectedFileId.value,
       entityQuery: entityQuery.value.trim(), relationType: relationType.value,
+      limit: ENTITY_PAGE_SIZE, offset,
     })
-    graphData.value = data
+    if (append && graphData.value) {
+      // Merge new records with existing, deduplicating by chunk_id
+      const existingIds = new Set(graphData.value.records.map(r => r.chunk_id))
+      const newRecords = (data.records || []).filter(r => !existingIds.has(r.chunk_id))
+      graphData.value = {
+        ...data,
+        records: [...graphData.value.records, ...newRecords],
+        nodes: [...(graphData.value.nodes || []), ...(data.nodes || [])],
+        edges: [...(graphData.value.edges || []), ...(data.edges || [])],
+      }
+    } else {
+      graphData.value = data
+    }
+    entityOffset.value = offset + ENTITY_PAGE_SIZE
+    hasMore.value = data.summary?.has_more ?? false
+    hasQueried.value = true
     assignColors(); buildGraph(); startSimulation()
     selectedNodeId.value = ''
     selectedChunkId.value = records.value[0]?.chunk_id || ''
     relationPage.value = 1
   } catch (err) {
     error.value = err.message || '加载图谱失败'
-    graphData.value = null; stopSimulation()
-  } finally { loading.value = false }
+    if (!append) { graphData.value = null; stopSimulation() }
+  } finally { isLoading.value = false }
 }
 
 async function onKbChange() {
   selectedFileId.value = ''; relationType.value = ''; entityQuery.value = ''
-  await loadKbFiles(); await loadRelationTypes(); await loadView()
+  graphData.value = null; entityOffset.value = 0; hasMore.value = false; hasQueried.value = false
+  await loadKbFiles(); await loadRelationTypes()
 }
-async function onFileChange() { relationType.value = ''; await loadRelationTypes(); await loadView() }
-async function submitFilters() { await loadView() }
+async function onFileChange() { relationType.value = ''; await loadRelationTypes() }
+async function submitFilters() {
+  entityOffset.value = 0; hasMore.value = false
+  stopSimulation(); graphData.value = null
+  await loadView()
+}
+async function loadMoreEntities() {
+  if (!hasMore.value || loadingMore.value) return
+  await loadView({ append: true })
+}
 
 function selectRelationRow(row) {
   selectedChunkId.value = row.chunk_id
@@ -561,7 +593,6 @@ function onRelationPageSizeChange() {
 
 onMounted(async () => {
   await loadKbs()
-  if (kbs.value.length) { selectedKbId.value = kbs.value[0].id; await onKbChange() }
 })
 onUnmounted(() => stopSimulation())
 </script>
@@ -755,6 +786,21 @@ onUnmounted(() => stopSimulation())
           <div v-else class="empty-inline">点击图中的实体节点查看关联关系和详细信息。</div>
         </aside>
       </div>
+
+      <!-- Entity paging hint & load more -->
+      <div v-if="hasQueried && records.length" class="graph-paging">
+        <span class="paging-hint">
+          已显示 {{ summary.entity_shown ?? records.length }} 个实体（共 {{ summary.entity_total }} 个）&ensp;|&ensp;关系 {{ summary.relation_total }}
+        </span>
+        <button
+          class="btn primary load-more-btn"
+          :disabled="!hasMore || loadingMore"
+          @click="loadMoreEntities"
+        >
+          <span v-if="loadingMore" class="spinner"></span>
+          {{ loadingMore ? '加载中...' : hasMore ? '加载更多' : '已加载全部' }}
+        </button>
+      </div>
     </section>
 
     <!-- ====== LIST VIEW ====== -->
@@ -832,6 +878,21 @@ onUnmounted(() => stopSimulation())
             </tbody>
           </table>
         </div>
+
+        <!-- Entity paging hint & load more -->
+        <div v-if="hasQueried && records.length" class="graph-paging">
+          <span class="paging-hint">
+            已显示 {{ summary.entity_shown ?? records.length }} 个实体（共 {{ summary.entity_total }} 个）&ensp;|&ensp;关系 {{ summary.relation_total }}
+          </span>
+          <button
+            class="btn primary load-more-btn"
+            :disabled="!hasMore || loadingMore"
+            @click="loadMoreEntities"
+          >
+            <span v-if="loadingMore" class="spinner"></span>
+            {{ loadingMore ? '加载中...' : hasMore ? '加载更多' : '已加载全部' }}
+          </button>
+        </div>
       </div>
     </section>
 
@@ -902,6 +963,13 @@ onUnmounted(() => stopSimulation())
 
 /* Graph mode */
 .graph-mode { padding: 16px; }
+.graph-paging {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--c-border);
+}
+.paging-hint { font-size: 12px; color: var(--c-secondary); }
+.load-more-btn { min-width: 120px; justify-content: center; gap: 6px; }
+.load-more-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .graph-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); gap: 16px; align-items: start; }
 .graph-canvas-wrap { min-width: 0; position: relative; }
 

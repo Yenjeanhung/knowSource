@@ -111,12 +111,14 @@ export async function fetchGraphRelationTypes({ kbId, fileId = '' }) {
   return res.json()
 }
 
-export async function fetchGraphView({ kbId, fileId = '', entityQuery = '', relationType = '' }) {
+export async function fetchGraphView({ kbId, fileId = '', entityQuery = '', relationType = '', limit = 200, offset = 0 }) {
   const params = new URLSearchParams()
   params.set('kb_id', kbId)
   if (fileId) params.set('file_id', fileId)
   if (entityQuery) params.set('entity_query', entityQuery)
   if (relationType) params.set('relation_type', relationType)
+  params.set('limit', String(limit))
+  params.set('offset', String(offset))
   const res = await fetch(`${API}/api/graph/view?${params.toString()}`)
   if (!res.ok) throw new Error('Fetch graph view failed')
   return res.json()

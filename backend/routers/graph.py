@@ -21,6 +21,8 @@ async def graph_view(
     file_id: str | None = Query(default=None),
     entity_query: str | None = Query(default=None),
     relation_type: str | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -30,6 +32,8 @@ async def graph_view(
             file_id=file_id,
             entity_query=entity_query,
             relation_type=relation_type,
+            limit=limit,
+            offset=offset,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
