@@ -31,6 +31,7 @@ const uploading = ref({})
 const processing = ref({})
 const nowTick = ref(Date.now())
 const pollTimers = {}
+const statusStreams = {}
 let clockTimer = null
 const stageTimers = ref({})
 const collapsedFiles = ref(new Set()) // 记录已折叠的文件
@@ -135,10 +136,7 @@ async function batchDeleteSelected() {
   
   // 清理定时器
   for (const fileId of fileIds) {
-    if (pollTimers[fileId]) {
-      clearInterval(pollTimers[fileId])
-      delete pollTimers[fileId]
-    }
+    stopStatusWatch(fileId)
     delete processing.value[fileId]
     collapsedFiles.value.delete(fileId)
   }
@@ -158,7 +156,7 @@ onMounted(async () => {
     kb.value = await getKb(props.kbId)
     files.value = (kb.value.files || []).map(normalizeFile)
     for (const file of files.value) {
-      if (file.status === 'processing') startPolling(file.id)
+      if (file.status === 'processing') startStatusWatch(file.id)
       // 处理完成的文件默认折叠
       if (file.status === 'indexed') collapsedFiles.value.add(file.id)
     }
@@ -170,6 +168,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   Object.values(pollTimers).forEach(clearInterval)
+  Object.values(statusStreams).forEach(stream => stream.close())
   if (clockTimer) clearInterval(clockTimer)
 })
 
@@ -397,7 +396,7 @@ async function confirmProcess(extractGraph) {
         }
       }
       processing.value[fileId] = 0
-      startPolling(fileId)
+      startStatusWatch(fileId)
     } catch {}
   }
   
@@ -445,29 +444,37 @@ async function batchProcess(extractGraph = true) {
         }
       }
       processing.value[file.id] = 0
-      startPolling(file.id)
+      startStatusWatch(file.id)
     } catch {}
   }
+}
+
+function applyStatusData(fileId, data) {
+  processing.value[fileId] = data.progress || 0
+  const target = files.value.find(item => item.id === fileId)
+  if (!target) return null
+  target.progress = data.progress || 0
+  target.message = data.message || target.message
+  target.detail = data.detail || target.detail
+  if (target.detail) syncStageTimers(fileId, target.detail)
+  target.logs = Array.isArray(data.logs) ? data.logs : target.logs
+  target.status = data.status || target.status
+  return target
 }
 
 async function syncFileStatus(fileId, timer = null) {
   try {
     const data = await getFileStatus(fileId)
-    processing.value[fileId] = data.progress || 0
-    const target = files.value.find(item => item.id === fileId)
-    if (target) {
-      target.progress = data.progress || 0
-      target.message = data.message || target.message
-      target.detail = data.detail || target.detail
-      if (target.detail) syncStageTimers(fileId, target.detail)
-      target.logs = Array.isArray(data.logs) ? data.logs : target.logs
-      target.status = data.status || target.status
-    }
+    const target = applyStatusData(fileId, data)
     if (data.status === 'indexed' || data.status === 'failed') {
       if (timer) clearInterval(timer)
       if (pollTimers[fileId]) {
         clearInterval(pollTimers[fileId])
         delete pollTimers[fileId]
+      }
+      if (statusStreams[fileId]) {
+        statusStreams[fileId].close()
+        delete statusStreams[fileId]
       }
       if (target && data.status === 'indexed') {
         delete processing.value[fileId]
@@ -493,9 +500,56 @@ function startPolling(fileId) {
   const timer = setInterval(async () => {
     const done = await syncFileStatus(fileId, timer)
     if (done) return
-  }, 300)
+  }, 1500)
   pollTimers[fileId] = timer
   syncFileStatus(fileId, timer)
+}
+
+function stopStatusWatch(fileId) {
+  if (pollTimers[fileId]) {
+    clearInterval(pollTimers[fileId])
+    delete pollTimers[fileId]
+  }
+  if (statusStreams[fileId]) {
+    statusStreams[fileId].close()
+    delete statusStreams[fileId]
+  }
+}
+
+function startStatusWatch(fileId) {
+  stopStatusWatch(fileId)
+  processing.value[fileId] = processing.value[fileId] || 0
+  const stream = new EventSource(`/api/files/${fileId}/events`)
+  let opened = false
+
+  stream.onopen = () => {
+    opened = true
+  }
+
+  stream.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      const target = applyStatusData(fileId, data)
+      if (data.status === 'indexed' || data.status === 'failed') {
+        stream.close()
+        delete statusStreams[fileId]
+        if (data.status === 'indexed') {
+          delete processing.value[fileId]
+          collapsedFiles.value.add(fileId)
+        }
+      }
+    } catch {}
+  }
+
+  stream.onerror = () => {
+    stream.close()
+    delete statusStreams[fileId]
+    if (!opened) {
+      startPolling(fileId)
+    }
+  }
+
+  statusStreams[fileId] = stream
 }
 
 async function deleteFile(fileId) {
@@ -508,10 +562,7 @@ async function deleteFile(fileId) {
   if (!confirmed) {
     return
   }
-  if (pollTimers[fileId]) {
-    clearInterval(pollTimers[fileId])
-    delete pollTimers[fileId]
-  }
+  stopStatusWatch(fileId)
   delete processing.value[fileId]
   // clean up stage timers for this file
   const cleaned = { ...stageTimers.value }
@@ -535,10 +586,7 @@ async function handleCancel(fileId) {
   if (!confirmed) {
     return
   }
-  if (pollTimers[fileId]) {
-    clearInterval(pollTimers[fileId])
-    delete pollTimers[fileId]
-  }
+  stopStatusWatch(fileId)
   delete processing.value[fileId]
   // clean up stage timers for this file
   const cleaned = { ...stageTimers.value }

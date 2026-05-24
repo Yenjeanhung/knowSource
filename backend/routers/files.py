@@ -1,5 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import FileResponse, PlainTextResponse
+import asyncio
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pathlib import Path
@@ -62,6 +65,34 @@ async def file_status(file_id: str, db: AsyncSession = Depends(get_db)):
     if not result:
         raise HTTPException(404, "File not found")
     return result
+
+
+@router.get("/files/{file_id}/events")
+async def file_status_events(
+    file_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    initial = await FileService.get_status(file_id, db)
+    if not initial:
+        raise HTTPException(404, "File not found")
+
+    async def event_stream():
+        queue = FileService.subscribe_status(file_id)
+        try:
+            yield f"data: {json.dumps(initial, ensure_ascii=False)}\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=15)
+                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            FileService.unsubscribe_status(file_id, queue)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.get("/files")

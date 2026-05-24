@@ -50,6 +50,98 @@ def _visual_stage_name(stage: str | None) -> str | None:
 
 
 class FileService:
+    _status_subscribers: dict[str, set[asyncio.Queue]] = {}
+    _cancel_events: dict[str, asyncio.Event] = {}
+    _running_tasks: dict[str, asyncio.Task] = {}
+
+    @staticmethod
+    def _build_status_payload(file: File) -> dict:
+        return {
+            "status": file.status,
+            "progress": file.progress,
+            "message": file.message,
+            "detail": FileService._read_detail(file),
+            "logs": FileService._read_logs(file),
+        }
+
+    @staticmethod
+    def subscribe_status(file_id: str) -> asyncio.Queue:
+        queue: asyncio.Queue = asyncio.Queue(maxsize=16)
+        FileService._status_subscribers.setdefault(file_id, set()).add(queue)
+        return queue
+
+    @staticmethod
+    def unsubscribe_status(file_id: str, queue: asyncio.Queue):
+        subscribers = FileService._status_subscribers.get(file_id)
+        if not subscribers:
+            return
+        subscribers.discard(queue)
+        if not subscribers:
+            FileService._status_subscribers.pop(file_id, None)
+
+    @staticmethod
+    def _publish_status(file_id: str, payload: dict):
+        subscribers = FileService._status_subscribers.get(file_id)
+        if not subscribers:
+            return
+        stale: list[asyncio.Queue] = []
+        for queue in list(subscribers):
+            try:
+                if queue.full():
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                queue.put_nowait(payload)
+            except Exception:
+                stale.append(queue)
+        for queue in stale:
+            subscribers.discard(queue)
+        if not subscribers:
+            FileService._status_subscribers.pop(file_id, None)
+
+    @staticmethod
+    def _create_cancel_event(file_id: str) -> asyncio.Event:
+        event = asyncio.Event()
+        FileService._cancel_events[file_id] = event
+        return event
+
+    @staticmethod
+    def _get_cancel_event(file_id: str) -> asyncio.Event | None:
+        return FileService._cancel_events.get(file_id)
+
+    @staticmethod
+    def _clear_cancel_event(file_id: str):
+        FileService._cancel_events.pop(file_id, None)
+
+    @staticmethod
+    def _check_cancelled(file_id: str):
+        event = FileService._get_cancel_event(file_id)
+        if event and event.is_set():
+            raise asyncio.CancelledError(f"Processing cancelled: {file_id}")
+
+    @staticmethod
+    def _register_running_task(file_id: str, task: asyncio.Task):
+        FileService._running_tasks[file_id] = task
+
+        def _cleanup(_task: asyncio.Task):
+            current = FileService._running_tasks.get(file_id)
+            if current is _task:
+                FileService._running_tasks.pop(file_id, None)
+                FileService._clear_cancel_event(file_id)
+
+        task.add_done_callback(_cleanup)
+
+    @staticmethod
+    def _cancel_running_task(file_id: str) -> asyncio.Task | None:
+        task = FileService._running_tasks.get(file_id)
+        event = FileService._get_cancel_event(file_id)
+        if event:
+            event.set()
+        if task and not task.done():
+            task.cancel()
+        return task
+
     @staticmethod
     async def _delete_index_artifacts(
         db: AsyncSession,
@@ -265,6 +357,7 @@ class FileService:
         if status is not None:
             file.status = status
         await db.commit()
+        FileService._publish_status(file.id, FileService._build_status_payload(file))
 
     @staticmethod
     async def upload_chunk(
@@ -390,7 +483,11 @@ class FileService:
             "Start processing: file_id=%s kb_id=%s file_name=%s extract_graph=%s",
             file.id, file.kb_id, file.name, extract_graph,
         )
-        asyncio.create_task(FileService._process_file_bg(file_id, extract_graph=extract_graph))
+        cancel_event = FileService._create_cancel_event(file_id)
+        task = asyncio.create_task(
+            FileService._process_file_bg(file_id, extract_graph=extract_graph, cancel_event=cancel_event)
+        )
+        FileService._register_running_task(file_id, task)
         return True
 
     @staticmethod
@@ -429,7 +526,11 @@ class FileService:
             "Restart processing: file_id=%s kb_id=%s file_name=%s extract_graph=%s",
             file.id, file.kb_id, file.name, extract_graph,
         )
-        asyncio.create_task(FileService._process_file_bg(file_id, extract_graph=extract_graph))
+        cancel_event = FileService._create_cancel_event(file_id)
+        task = asyncio.create_task(
+            FileService._process_file_bg(file_id, extract_graph=extract_graph, cancel_event=cancel_event)
+        )
+        FileService._register_running_task(file_id, task)
         return True
 
     @staticmethod
@@ -437,18 +538,13 @@ class FileService:
         file = await db.get(File, file_id)
         if not file:
             return None
-        return {
-            "status": file.status,
-            "progress": file.progress,
-            "message": file.message,
-            "detail": FileService._read_detail(file),
-            "logs": FileService._read_logs(file),
-        }
+        return FileService._build_status_payload(file)
 
     @staticmethod
-    async def _process_file_bg(file_id: str, extract_graph: bool = True):
+    async def _process_file_bg(file_id: str, extract_graph: bool = True, cancel_event: asyncio.Event | None = None):
         async with async_session() as db:
             try:
+                FileService._check_cancelled(file_id)
                 file = await db.get(File, file_id)
                 if not file or not file.path:
                     logger.warning("Background processing aborted: file_id=%s missing file or path", file_id)
@@ -488,6 +584,7 @@ class FileService:
                 parse_started = perf_counter()
                 parser = get_parser(file_path)
                 result = parser.parse(file_path)
+                FileService._check_cancelled(file_id)
                 parse_ms = (perf_counter() - parse_started) * 1000
                 logger.info(
                     "Parsing completed: file_id=%s content_chars=%s metadata_keys=%s duration_ms=%.0f",
@@ -542,6 +639,7 @@ class FileService:
 
                 async def flush_vector_batch(*, final: bool) -> None:
                     nonlocal written_docs, last_written_offset
+                    FileService._check_cancelled(file_id)
                     if not pending_docs:
                         return
 
@@ -609,6 +707,7 @@ class FileService:
                     pending_chunk_rows.clear()
 
                 for chunk in iter_text_chunks(result.content, result.metadata):
+                    FileService._check_cancelled(file_id)
                     generated_chunks += 1
                     last_generated_offset = chunk["end_offset"]
                     chunk_id = f"{file_id}_{chunk['index']}"
@@ -647,6 +746,7 @@ class FileService:
                     return
 
                 await flush_vector_batch(final=True)
+                FileService._check_cancelled(file_id)
                 chunk_ms = (perf_counter() - chunk_started) * 1000
                 vector_ms = (perf_counter() - vector_started) * 1000
                 logger.info(
@@ -706,6 +806,7 @@ class FileService:
                     unique_relations: set[tuple[str, str, str, str, str]] = set()
 
                     async def batch_result_callback(batch_chunks: list):
+                        FileService._check_cancelled(file_id)
                         await asyncio.to_thread(
                             upsert_document_graph,
                             file.kb_id,
@@ -744,6 +845,7 @@ class FileService:
                         started_batches: int,
                         running_batches: int,
                     ):
+                        FileService._check_cancelled(file_id)
                         ratio = processed_batches / max(total_batches, 1)
                         dispatch_ratio = started_batches / max(total_batches, 1)
                         visual_ratio = max(ratio, dispatch_ratio * 0.35)
@@ -795,6 +897,7 @@ class FileService:
                         )
 
                     async def extraction_log_callback(message: str):
+                        FileService._check_cancelled(file_id)
                         now = perf_counter()
                         should_flush = (
                             "开始请求大模型抽取" in message
@@ -821,7 +924,9 @@ class FileService:
                         progress_callback=extraction_progress_callback,
                         log_callback=extraction_log_callback,
                         batch_result_callback=batch_result_callback,
+                        cancel_check=lambda: FileService._check_cancelled(file_id),
                     )
+                    FileService._check_cancelled(file_id)
                     entity_count = sum(len(chunk.entities) for chunk in graph_chunks)
                     relation_count = sum(len(chunk.relations) for chunk in graph_chunks)
                     extraction_ms = (perf_counter() - extraction_started) * 1000
@@ -877,6 +982,7 @@ class FileService:
                     )
 
                 total_ms = (perf_counter() - pipeline_started) * 1000
+                FileService._check_cancelled(file_id)
                 await FileService._commit_runtime_state(
                     db,
                     file,
@@ -913,6 +1019,9 @@ class FileService:
                     file.progress,
                     total_ms,
                 )
+            except asyncio.CancelledError:
+                logger.info("Processing task cancelled: file_id=%s", file_id)
+                return
             except Exception as exc:
                 logger.exception("Processing pipeline failed: file_id=%s error=%s", file_id, exc)
                 try:
@@ -983,7 +1092,19 @@ class FileService:
         if file.status not in ("processing", "indexed"):
             logger.warning("Cancel processing skipped: file_id=%s invalid status=%s", file_id, file.status)
             return False
-        
+
+        # 首先取消正在运行的处理任务，等待其结束（无论是正常结束还是被取消），确保不会有并发的数据库操作冲突
+        running_task = FileService._cancel_running_task(file_id)
+        if running_task:
+            try:
+                await asyncio.wait_for(asyncio.shield(running_task), timeout=1.5)
+            except asyncio.TimeoutError:
+                logger.warning("Processing task did not stop within timeout: file_id=%s", file_id)
+            except asyncio.CancelledError:
+                logger.info("Processing task acknowledged cancellation: file_id=%s", file_id)
+            except Exception:
+                logger.exception("Processing task ended with error while cancelling: file_id=%s", file_id)
+
         # 删除已入库的数据（分片、向量、图谱），但保留原文件
         await FileService._delete_index_artifacts(db, file, remove_source_file=False)
         
@@ -995,6 +1116,7 @@ class FileService:
         FileService._write_logs(file, [])
         
         await db.commit()
+        FileService._publish_status(file.id, FileService._build_status_payload(file))
         logger.info("Processing cancelled: file_id=%s kb_id=%s", file.id, file.kb_id)
         return True
 

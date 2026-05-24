@@ -66,6 +66,7 @@ Chunks:
 ProgressCallback = Callable[[int, int, int, int, int, int], Awaitable[None]]
 LogCallback = Callable[[str], Awaitable[None]]
 BatchResultCallback = Callable[[list[ChunkGraphData]], Awaitable[None]]
+CancelCheck = Callable[[], None]
 
 
 class GraphExtractionService:
@@ -76,7 +77,10 @@ class GraphExtractionService:
         progress_callback: ProgressCallback | None = None,
         log_callback: LogCallback | None = None,
         batch_result_callback: BatchResultCallback | None = None,
+        cancel_check: CancelCheck | None = None,
     ) -> list[ChunkGraphData]:
+        if cancel_check:
+            cancel_check()
         if not settings.GRAPH_ENTITY_EXTRACTION_ENABLED or not chunks:
             return chunks
 
@@ -132,6 +136,8 @@ class GraphExtractionService:
             )
 
         async def run_batch(batch_index: int, batch: list[ChunkGraphData]):
+            if cancel_check:
+                cancel_check()
             prompt = GRAPH_EXTRACTION_TEMPLATE.format(
                 file_name=file_name,
                 chunk_payload=GraphExtractionService._render_chunks(batch),
@@ -162,6 +168,8 @@ class GraphExtractionService:
                         SystemMessage(content=GRAPH_EXTRACTION_SYSTEM_PROMPT),
                         HumanMessage(content=prompt),
                     ])
+                    if cancel_check:
+                        cancel_check()
                     payload = GraphExtractionService._parse_response(response.content)
                     duration = perf_counter() - batch_started
                     logger.info(
@@ -204,33 +212,43 @@ class GraphExtractionService:
         failed_batches = 0
         first_error = None
         tasks = [asyncio.create_task(run_batch(index, batch)) for index, batch in enumerate(batches)]
-        for future in asyncio.as_completed(tasks):
-            batch, payload, is_failed = await future
-            if is_failed:
-                failed_batches += 1
-                # 如果是第一个失败的批次，记录错误信息
-                if first_error is None:
-                    first_error = f"Graph extraction batch failed: batch={len(batch)} chunks"
-            GraphExtractionService._merge_payload(chunk_map, payload)
-            async with progress_lock:
-                processed_batches += 1
-                processed_chunks += len(batch)
-                running_batches = max(0, running_batches - 1)
-                current_processed_batches = processed_batches
-                current_processed_chunks = processed_chunks
-                current_started_batches = started_batches
-                current_running_batches = running_batches
-            if batch_result_callback:
-                await batch_result_callback(batch)
-            if progress_callback:
-                await progress_callback(
-                    current_processed_batches,
-                    total_batches,
-                    current_processed_chunks,
-                    total_candidate_chunks,
-                    current_started_batches,
-                    current_running_batches,
-                )
+        try:
+            for future in asyncio.as_completed(tasks):
+                if cancel_check:
+                    cancel_check()
+                batch, payload, is_failed = await future
+                if cancel_check:
+                    cancel_check()
+                if is_failed:
+                    failed_batches += 1
+                    # 如果是第一个失败的批次，记录错误信息
+                    if first_error is None:
+                        first_error = f"Graph extraction batch failed: batch={len(batch)} chunks"
+                GraphExtractionService._merge_payload(chunk_map, payload)
+                async with progress_lock:
+                    processed_batches += 1
+                    processed_chunks += len(batch)
+                    running_batches = max(0, running_batches - 1)
+                    current_processed_batches = processed_batches
+                    current_processed_chunks = processed_chunks
+                    current_started_batches = started_batches
+                    current_running_batches = running_batches
+                if batch_result_callback:
+                    await batch_result_callback(batch)
+                if progress_callback:
+                    await progress_callback(
+                        current_processed_batches,
+                        total_batches,
+                        current_processed_chunks,
+                        total_candidate_chunks,
+                        current_started_batches,
+                        current_running_batches,
+                    )
+        except asyncio.CancelledError:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
 
         if failed_batches > 0:
             error_message = f"Graph extraction failed: {failed_batches}/{total_batches} batches failed"
