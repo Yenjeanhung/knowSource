@@ -68,8 +68,22 @@ async def init_db():
                 if version not in applied:
                     for stmt in stmt_block.split(";"):
                         stmt = stmt.strip()
-                        if stmt:
-                            await conn.execute(text(stmt))
+                        if not stmt:
+                            continue
+                        # ALTER TABLE ADD COLUMN -> skip if column already exists
+                        m = re.match(
+                            r"ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)\s",
+                            stmt, re.IGNORECASE,
+                        )
+                        if m:
+                            table, col = m.group(1), m.group(2)
+                            cols = await conn.execute(
+                                text(f"PRAGMA table_info('{table}')")
+                            )
+                            existing = {row[1] for row in cols}
+                            if col in existing:
+                                continue
+                        await conn.execute(text(stmt))
                     from datetime import datetime
                     await conn.execute(
                         text("INSERT INTO _migrations (version, applied_at) VALUES (:v, :t)"),
