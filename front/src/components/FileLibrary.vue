@@ -64,6 +64,7 @@ const showCrawlForm = ref(false)
 const crawlMaxLimit = ref(20)
 
 const activeCrawlJobs = computed(() => crawlJobs.value.filter(j => j.status === 'running' || j.status === 'queued'))
+const finishedCrawlJobs = computed(() => crawlJobs.value.filter(j => j.status === 'done' || j.status === 'failed'))
 
 // 预览相关
 const previewAsset = ref(null)
@@ -517,16 +518,21 @@ function watchCrawlJob(jobId) {
         clearInterval(crawlTimers[jobId])
         delete crawlTimers[jobId]
         await loadAssets()
-        // 完成后延迟移除，让用户看到最终状态
+        // 失败的任务保留更长时间，让用户看到错误信息
+        const delay = job.status === 'failed' ? 30000 : 5000
         setTimeout(() => {
           crawlJobs.value = crawlJobs.value.filter(j => j.id !== jobId)
-        }, 3000)
+        }, delay)
       }
     } catch {
       clearInterval(crawlTimers[jobId])
       delete crawlTimers[jobId]
     }
   }, 1500)
+}
+
+function dismissCrawlJob(jobId) {
+  crawlJobs.value = crawlJobs.value.filter(j => j.id !== jobId)
 }
 
 async function restoreCrawlJobs() {
@@ -622,7 +628,7 @@ onUnmounted(() => {
       <!-- 右侧文件列表 -->
       <main class="asset-panel">
         <!-- 采集表单 - 点击采集按钮展开 -->
-        <div class="crawl-band" v-if="showCrawlForm || activeCrawlJobs.length > 0">
+        <div class="crawl-band" v-if="showCrawlForm || activeCrawlJobs.length > 0 || finishedCrawlJobs.length > 0">
           <div class="crawl-fields">
             <input type="text" v-model="crawlKeyword" placeholder="输入关键词联网采集资料" @keydown.enter="startCrawl">
             <input type="number" class="small-input" v-model.number="crawlMaxPages" :min="1" :max="crawlMaxLimit" placeholder="页数">
@@ -660,6 +666,27 @@ onUnmounted(() => {
               </span>
             </div>
             <details v-if="job.logs && job.logs.length" class="task-logs" open>
+              <summary class="task-logs-toggle">日志 ({{ job.logs.length }})</summary>
+              <div class="task-logs-body">
+                <div v-for="(log, i) in job.logs" :key="i" class="task-log-line">
+                  <span class="tl-time">[{{ fmtLogTime(log.time) }}]</span>
+                  <span class="tl-level" :class="`tl-${log.level}`">{{ log.level === 'error' ? 'ERR' : log.level === 'warning' ? 'WRN' : 'INF' }}</span>
+                  <span class="tl-msg">{{ log.message }}</span>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <!-- 已完成的采集任务（成功/失败） -->
+          <div v-for="job in finishedCrawlJobs" :key="job.id" class="crawl-task-card" :class="{ 'task-failed': job.status === 'failed', 'task-done': job.status === 'done' }">
+            <div class="task-card-head">
+              <span class="task-dot" :class="job.status === 'failed' ? 'failed' : 'done'"></span>
+              <span class="task-keyword">{{ job.keyword }}</span>
+              <span class="task-status-badge" :class="job.status">{{ job.status === 'failed' ? '失败' : '完成' }}</span>
+              <button class="icon-btn task-dismiss" @click="dismissCrawlJob(job.id)" title="关闭">✕</button>
+            </div>
+            <div class="task-message" v-if="job.message">{{ job.message }}</div>
+            <details v-if="job.logs && job.logs.length" class="task-logs">
               <summary class="task-logs-toggle">日志 ({{ job.logs.length }})</summary>
               <div class="task-logs-body">
                 <div v-for="(log, i) in job.logs" :key="i" class="task-log-line">
@@ -982,9 +1009,19 @@ onUnmounted(() => {
 .task-card-head { display: flex; align-items: center; gap: 8px; }
 .task-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .task-dot.running { background: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.5); animation: pulse-dot 1.5s ease-in-out infinite; }
+.task-dot.done { background: #22c55e; }
+.task-dot.failed { background: #ef4444; }
 @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 .task-keyword { font-weight: 600; font-size: 13px; color: var(--c-text); flex: 1; }
 .task-pct { font-weight: 700; font-size: 12px; color: var(--c-text); }
+.task-status-badge { font-size: 11px; padding: 1px 8px; border-radius: 999px; font-weight: 600; white-space: nowrap; }
+.task-status-badge.done { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
+.task-status-badge.failed { background: rgba(239, 68, 68, 0.12); color: #dc2626; }
+.task-dismiss { padding: 2px 6px !important; font-size: 12px; line-height: 1; opacity: 0.5; }
+.task-dismiss:hover { opacity: 1; }
+.task-message { font-size: 12px; color: #dc2626; margin-top: 6px; padding: 6px 8px; background: rgba(239, 68, 68, 0.06); border-radius: 6px; white-space: pre-wrap; word-break: break-word; }
+.task-failed { border-left-color: #ef4444 !important; }
+.task-done { border-left-color: #22c55e !important; }
 .task-progress-bar { height: 3px; background: var(--c-border); border-radius: 999px; overflow: hidden; margin: 6px 0; }
 .task-progress-bar div { height: 100%; background: var(--c-fg); transition: width 300ms ease; }
 .task-stages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }

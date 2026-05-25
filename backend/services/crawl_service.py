@@ -157,8 +157,10 @@ def _search_tavily(keyword: str, limit: int, timeout: int) -> list[str]:
     """用 Tavily API 搜索（专门为 AI 设计的搜索，返回高质量结果）。"""
     api_key = settings.TAVILY_API_KEY
     if not api_key:
-        logger.debug("Tavily API key 未配置，跳过")
-        return []
+        raise RuntimeError(
+            "Tavily API Key 未配置，请在 .env 中设置 TAVILY_API_KEY="
+            "（可到 https://www.tavily.com/ 免费注册，每月 1000 次额度）"
+        )
     search_url = "https://api.tavily.com/search"
     payload = {
         "api_key": api_key,
@@ -167,8 +169,8 @@ def _search_tavily(keyword: str, limit: int, timeout: int) -> list[str]:
         "search_depth": "basic",
     }
     logger.info("Tavily 搜索请求：%s", keyword)
+    import json as _json
     try:
-        import json as _json
         req = Request(
             search_url,
             data=_json.dumps(payload).encode("utf-8"),
@@ -177,13 +179,19 @@ def _search_tavily(keyword: str, limit: int, timeout: int) -> list[str]:
         )
         with urlopen(req, timeout=timeout) as resp:
             data = _json.loads(resp.read())
-        results = data.get("results", [])
-        urls = [r["url"] for r in results if r.get("url")]
-        logger.info("Tavily 搜索到 %d 个结果", len(urls))
-        return urls[:limit]
     except Exception as e:
-        logger.warning("Tavily 搜索失败：%s", e)
-        return []
+        raise RuntimeError(
+            f"Tavily API 调用失败：{e}\n"
+            "可能原因：网络不通、API Key 无效、或 Tavily 服务不可达"
+        )
+    results = data.get("results", [])
+    urls = [r["url"] for r in results if r.get("url")]
+    logger.info("Tavily 搜索到 %d 个结果", len(urls))
+    if not urls:
+        raise RuntimeError(
+            "Tavily API 未返回任何搜索结果，请检查 API Key 是否有效或搜索关键词是否合理"
+        )
+    return urls[:limit]
 
 
 def _search_bing(keyword: str, limit: int, timeout: int) -> list[str]:
@@ -193,8 +201,10 @@ def _search_bing(keyword: str, limit: int, timeout: int) -> list[str]:
     try:
         html = _fetch_url(search_url, timeout)
     except Exception as e:
-        logger.warning("Bing 搜索请求失败：%s", e)
-        return []
+        raise RuntimeError(
+            f"Bing 搜索网络请求失败：{e}\n"
+            "可能原因：网络不通、需要代理、或 Bing 暂时不可达。可尝试切换 SEARCH_PROVIDER=tavily 或 duckduckgo"
+        )
     logger.debug("Bing 响应长度：%d 字符", len(html))
     # Bing 搜索结果在 <li class="b_algo"> 或 <li class="b_algo ..."> 块中
     algo_blocks = re.findall(r'<li[^>]*class="[^"]*b_algo[^"]*"[^>]*>(.*?)</li>', html, re.S)
@@ -221,6 +231,11 @@ def _search_bing(keyword: str, limit: int, timeout: int) -> list[str]:
         if len(urls) >= limit:
             break
     logger.info("Bing 搜索到 %d 个链接", len(urls))
+    if not urls:
+        raise RuntimeError(
+            "Bing 搜索未返回任何结果，可能触发了验证码或反爬限制\n"
+            "建议：1) 稍后重试  2) 切换搜索引擎 SEARCH_PROVIDER=tavily（推荐，每月 1000 次免费）"
+        )
     return urls
 
 
@@ -231,8 +246,10 @@ def _search_duckduckgo(keyword: str, limit: int, timeout: int) -> list[str]:
     try:
         html = _fetch_url(search_url, timeout)
     except Exception as e:
-        logger.warning("DuckDuckGo 搜索请求失败：%s", e)
-        return []
+        raise RuntimeError(
+            f"DuckDuckGo 搜索网络请求失败：{e}\n"
+            "可能原因：网络不通、需要代理。可尝试切换 SEARCH_PROVIDER=tavily 或 bing"
+        )
     logger.debug("DuckDuckGo 响应长度：%d 字符", len(html))
     candidates = re.findall(r'href="([^"]+)"[^>]*class="result__a"', html)
     if not candidates:
@@ -248,18 +265,36 @@ def _search_duckduckgo(keyword: str, limit: int, timeout: int) -> list[str]:
         urls.append(url)
         if len(urls) >= limit:
             break
+    if not urls:
+        raise RuntimeError(
+            "DuckDuckGo 搜索未返回任何结果，可能被限制或网络不通\n"
+            "建议：1) 稍后重试  2) 切换 SEARCH_PROVIDER=tavily（推荐，每月 1000 次免费）"
+        )
     return urls
 
 
 def _search_web(keyword: str, limit: int, timeout: int) -> list[str]:
-    """按配置的搜索引擎搜索。"""
-    provider = settings.SEARCH_PROVIDER.lower()
-    if provider == "tavily":
-        return _search_tavily(keyword, limit, timeout)
-    elif provider == "duckduckgo":
-        return _search_duckduckgo(keyword, limit, timeout)
-    else:
-        return _search_bing(keyword, limit, timeout)
+    """按配置的搜索引擎搜索，抛出明确错误便于排查。"""
+    provider = settings.SEARCH_PROVIDER.strip().lower()
+    known = {"tavily", "duckduckgo", "bing"}
+    if provider not in known:
+        raise RuntimeError(
+            f"未知的搜索引擎 [{provider}]，请在 .env 中设置 SEARCH_PROVIDER 为 tavily / bing / duckduckgo 之一"
+        )
+    try:
+        if provider == "tavily":
+            return _search_tavily(keyword, limit, timeout)
+        elif provider == "duckduckgo":
+            return _search_duckduckgo(keyword, limit, timeout)
+        else:
+            return _search_bing(keyword, limit, timeout)
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(
+            f"搜索引擎 [{provider}] 调用异常：{e}\n"
+            "请检查 .env 中 SEARCH_PROVIDER 及相关 API Key 配置"
+        )
 
 
 def _clean_thinking(content: str) -> str:
@@ -491,9 +526,11 @@ class CrawlService:
                     limit,
                     settings.CRAWL_TIMEOUT_SECONDS,
                 )
-                if not urls:
-                    await CrawlService._append_log(db, job, "error", "DuckDuckGo 搜索未返回结果，可能是网络问题或被反爬拦截")
-                    raise RuntimeError("未搜索到可采集网页，请检查网络连接或稍后重试")
+                if not urls:  # 防御性检查，正常情况下 _search_* 会直接抛异常
+                    raise RuntimeError(
+                        f"搜索引擎 [{settings.SEARCH_PROVIDER}] 未返回任何结果，"
+                        "请检查网络连接或 .env 中 SEARCH_PROVIDER 及相关 API Key 配置"
+                    )
 
                 job.urls = json.dumps(urls, ensure_ascii=False)
                 await db.commit()
