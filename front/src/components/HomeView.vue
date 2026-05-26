@@ -1,12 +1,8 @@
 <script setup>
-import { computed, inject, ref } from 'vue'
-
-const vectorProvider = inject('vectorProvider', ref(''))
-const graphProvider = inject('graphProvider', ref(''))
-
 const flowSteps = [
   {
     key: 'files',
+    number: '01',
     to: '/files',
     label: '文件/数据采集',
     role: '资料入口',
@@ -15,6 +11,7 @@ const flowSteps = [
   },
   {
     key: 'kb',
+    number: '02',
     to: '/kb',
     label: '知识库',
     role: '知识中枢',
@@ -23,6 +20,7 @@ const flowSteps = [
   },
   {
     key: 'query',
+    number: '03',
     to: '/query',
     label: '问答',
     role: '主业务出口',
@@ -31,6 +29,7 @@ const flowSteps = [
   },
   {
     key: 'vectors',
+    number: '04',
     to: '/vectors',
     label: '向量',
     role: '召回支线',
@@ -39,6 +38,7 @@ const flowSteps = [
   },
   {
     key: 'graph',
+    number: '05',
     to: '/graph',
     label: '图谱',
     role: '关系支线',
@@ -46,42 +46,35 @@ const flowSteps = [
     action: '查看图谱',
   },
 ]
-
-const providerItems = computed(() => [
-  { label: '向量库', value: vectorProvider.value || '未配置' },
-  { label: '图数据库', value: graphProvider.value || '未配置' },
-])
 </script>
 
 <template>
   <div class="home-view">
     <header class="home-head">
       <div class="home-title-block">
-        <div class="home-kicker">工作流首页</div>
         <h1>KnowSource 知识处理流程</h1>
         <p>从文件和数据采集开始，进入知识库加工，再输出到问答；向量和图谱作为知识库的索引与关系分析支线。</p>
-      </div>
-
-      <div class="provider-strip" aria-label="系统配置">
-        <div v-for="item in providerItems" :key="item.label" class="provider-pill">
-          <span>{{ item.label }}</span>
-          <strong>{{ item.value }}</strong>
-        </div>
       </div>
     </header>
 
     <section class="flow-band" aria-label="系统菜单流程">
       <div class="flow-map">
         <svg class="flow-links" viewBox="0 0 1000 720" preserveAspectRatio="none" aria-hidden="true">
-          <path class="flow-link main-link" d="M160 360 C265 360 315 360 420 360" />
-          <path class="flow-link main-link" d="M580 360 C685 360 735 360 840 360" />
-          <path class="flow-link branch-link" d="M500 285 C500 230 500 198 500 145" />
-          <path class="flow-link branch-link" d="M500 435 C500 492 500 524 500 582" />
-          <circle class="flow-dot dot-files" cx="160" cy="360" r="6" />
-          <circle class="flow-dot dot-kb" cx="500" cy="360" r="7" />
-          <circle class="flow-dot dot-query" cx="840" cy="360" r="6" />
-          <circle class="flow-dot dot-vector" cx="500" cy="145" r="6" />
-          <circle class="flow-dot dot-graph" cx="500" cy="582" r="6" />
+          <defs>
+            <marker id="flow-arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+              <path d="M2 2 10 6 2 10Z" />
+            </marker>
+          </defs>
+          <path class="flow-link main-link" d="M285 205 C340 205 374 205 428 205" marker-end="url(#flow-arrow)" />
+          <path class="flow-link main-link" d="M572 205 C626 205 660 205 715 205" marker-end="url(#flow-arrow)" />
+          <path class="flow-link branch-link" d="M500 294 C500 350 500 378 500 414" />
+          <path class="flow-link branch-link" d="M500 414 C456 444 405 474 333 508" marker-end="url(#flow-arrow)" />
+          <path class="flow-link branch-link" d="M500 414 C544 444 595 474 667 508" marker-end="url(#flow-arrow)" />
+          <circle class="flow-dot dot-files" cx="167" cy="205" r="6" />
+          <circle class="flow-dot dot-kb" cx="500" cy="205" r="7" />
+          <circle class="flow-dot dot-query" cx="833" cy="205" r="6" />
+          <circle class="flow-dot dot-vector" cx="333" cy="508" r="6" />
+          <circle class="flow-dot dot-graph" cx="667" cy="508" r="6" />
         </svg>
 
         <RouterLink
@@ -209,6 +202,11 @@ const providerItems = computed(() => [
           </div>
 
           <div class="flow-copy">
+            <div class="step-meta">
+              <span class="step-number">{{ step.number }}</span>
+              <span v-if="step.key === 'files'" class="start-chip">START</span>
+              <span v-else-if="step.key === 'vectors' || step.key === 'graph'" class="branch-chip">知识库支线</span>
+            </div>
             <span class="flow-role">{{ step.role }}</span>
             <h2>{{ step.label }}</h2>
             <p>{{ step.line }}</p>
@@ -250,27 +248,12 @@ const providerItems = computed(() => [
 }
 
 .home-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
   max-width: 1180px;
   margin: 0 auto;
 }
 
 .home-title-block {
-  max-width: 760px;
-}
-
-.home-kicker {
-  margin-bottom: 8px;
-  color: #0f7893;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-:root[data-theme='dark'] .home-kicker {
-  color: #78dce3;
+  max-width: 820px;
 }
 
 .home-title-block h1 {
@@ -285,38 +268,6 @@ const providerItems = computed(() => [
   color: var(--c-secondary);
   font-size: 15px;
   line-height: 1.8;
-}
-
-.provider-strip {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.provider-pill {
-  min-width: 136px;
-  padding: 10px 12px;
-  border: 1px solid var(--c-border);
-  border-radius: 8px;
-  background: var(--c-panel);
-}
-
-.provider-pill span {
-  display: block;
-  color: var(--c-secondary);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.provider-pill strong {
-  display: block;
-  margin-top: 3px;
-  font-size: 13px;
-  color: var(--c-fg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .flow-band {
@@ -346,9 +297,9 @@ const providerItems = computed(() => [
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(250px, 1.04fr) minmax(220px, 1fr);
-  grid-template-rows: repeat(3, minmax(206px, auto));
-  gap: 22px 34px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-rows: minmax(238px, auto) minmax(224px, auto);
+  gap: 30px 22px;
   max-width: 1120px;
   margin: 0 auto;
 }
@@ -365,13 +316,18 @@ const providerItems = computed(() => [
 .flow-link {
   fill: none;
   stroke: #0e6b85;
-  stroke-width: 5;
+  stroke-width: 4.5;
   stroke-linecap: round;
   opacity: 0.42;
 }
 
 .branch-link {
-  stroke-dasharray: 10 11;
+  stroke-dasharray: 9 10;
+}
+
+#flow-arrow path {
+  fill: #0e6b85;
+  opacity: 0.72;
 }
 
 .flow-dot {
@@ -406,13 +362,38 @@ const providerItems = computed(() => [
   transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 
+.flow-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 0 rgba(14, 107, 133, 0);
+  transition: box-shadow 160ms ease;
+}
+
 .flow-card:hover,
 .flow-card:focus-visible {
-  transform: translateY(-4px);
+  transform: translateY(-6px);
   border-color: rgba(14, 107, 133, 0.44);
   background: rgba(255, 255, 255, 0.97);
-  box-shadow: 0 22px 52px rgba(35, 106, 116, 0.18);
+  box-shadow: 0 22px 52px rgba(35, 106, 116, 0.2);
   outline: none;
+}
+
+.flow-card:hover::before,
+.flow-card:focus-visible::before {
+  box-shadow: inset 0 0 0 2px rgba(14, 107, 133, 0.18);
+}
+
+.flow-card:hover .menu-art,
+.flow-card:focus-visible .menu-art {
+  transform: translateY(-5px) scale(1.03);
+}
+
+.flow-card:hover .flow-action,
+.flow-card:focus-visible .flow-action {
+  transform: translateX(3px);
 }
 
 :root[data-theme='dark'] .flow-card {
@@ -430,28 +411,28 @@ const providerItems = computed(() => [
 }
 
 .step-files {
-  grid-column: 1;
-  grid-row: 2;
-}
-
-.step-kb {
-  grid-column: 2;
-  grid-row: 2;
-}
-
-.step-query {
-  grid-column: 3;
-  grid-row: 2;
-}
-
-.step-vectors {
-  grid-column: 2;
+  grid-column: 1 / 3;
   grid-row: 1;
 }
 
+.step-kb {
+  grid-column: 3 / 5;
+  grid-row: 1;
+}
+
+.step-query {
+  grid-column: 5 / 7;
+  grid-row: 1;
+}
+
+.step-vectors {
+  grid-column: 2 / 4;
+  grid-row: 2;
+}
+
 .step-graph {
-  grid-column: 2;
-  grid-row: 3;
+  grid-column: 4 / 6;
+  grid-row: 2;
 }
 
 .art-panel {
@@ -466,6 +447,7 @@ const providerItems = computed(() => [
   width: 100%;
   height: 100%;
   overflow: visible;
+  transition: transform 180ms ease;
 }
 
 .flow-copy {
@@ -474,6 +456,48 @@ const providerItems = computed(() => [
   flex: 1;
   min-height: 0;
   padding: 2px 4px 0;
+}
+
+.step-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 5px;
+}
+
+.step-number,
+.start-chip,
+.branch-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.step-number {
+  min-width: 32px;
+  padding: 0 8px;
+  background: #e4f7f7;
+  color: #0b6d85;
+  box-shadow: inset 0 0 0 1px rgba(14, 107, 133, 0.18);
+}
+
+.start-chip {
+  padding: 0 9px;
+  background: #f6bd4b;
+  color: #17303a;
+  box-shadow: inset 0 0 0 1px rgba(112, 70, 7, 0.18);
+}
+
+.branch-chip {
+  padding: 0 9px;
+  background: rgba(134, 201, 87, 0.2);
+  color: #386f1e;
+  box-shadow: inset 0 0 0 1px rgba(74, 128, 39, 0.2);
 }
 
 .flow-role {
@@ -513,6 +537,7 @@ const providerItems = computed(() => [
   color: #0c6680;
   font-size: 13px;
   font-weight: 800;
+  transition: transform 160ms ease;
 }
 
 .flow-action svg {
@@ -811,15 +836,6 @@ const providerItems = computed(() => [
 }
 
 @media (max-width: 980px) {
-  .home-head {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .provider-strip {
-    justify-content: flex-start;
-  }
-
   .flow-map {
     grid-template-columns: 1fr;
     grid-template-rows: none;
