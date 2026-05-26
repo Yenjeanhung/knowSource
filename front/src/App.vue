@@ -1,15 +1,19 @@
 <script setup>
 import { computed, onMounted, provide, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { fetchConfig } from './api'
 
 const router = useRouter()
+const route = useRoute()
 const isSidebarCollapsed = ref(false)
 const SIDEBAR_STORAGE_KEY = 'knowsource.sidebar.collapsed'
 const THEME_STORAGE_KEY = 'knowsource.theme'
 const theme = ref('dark')
 const vectorProvider = ref('')
 const graphProvider = ref('')
+
+provide('vectorProvider', vectorProvider)
+provide('graphProvider', graphProvider)
 
 const menuItems = computed(() => [
   { to: '/files', label: '文件', exact: false, hint: '文件管理' },
@@ -38,6 +42,10 @@ function isExact(item) {
   return item.exact ? 'is-active' : undefined
 }
 
+function goHome() {
+  router.push('/')
+}
+
 onMounted(() => {
   const saved = localStorage.getItem(SIDEBAR_STORAGE_KEY)
   if (saved !== null) {
@@ -51,9 +59,6 @@ onMounted(() => {
     // 默认使用深色模式
     applyTheme('dark')
   }
-
-  provide('vectorProvider', vectorProvider)
-  provide('graphProvider', graphProvider)
 
   fetchConfig().then(cfg => {
     vectorProvider.value = cfg.vector_provider || ''
@@ -220,7 +225,13 @@ onMounted(() => {
         </router-link>
       </nav>
 
-      <div class="side-brand" @click="router.push('/files')">
+      <button
+        class="side-brand"
+        :class="{ 'is-active': route.path === '/' }"
+        type="button"
+        aria-label="返回首页"
+        @click="goHome"
+      >
         <span class="side-icon-wrap brand-icon" aria-hidden="true">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2.75 18.5 8.25 12 21.25 5.5 8.25 12 2.75Z" />
@@ -229,8 +240,8 @@ onMounted(() => {
           </svg>
         </span>
         <span class="brand-text">KnowSource</span>
-        <span class="side-hint">KnowSource</span>
-      </div>
+        <span class="side-hint">首页</span>
+      </button>
     </aside>
 
     <main class="main-area">
@@ -318,8 +329,11 @@ onMounted(() => {
   gap: 4px;
   min-height: 48px;
   padding: 8px 6px;
+  border: 0;
   border-radius: 14px;
+  background: transparent;
   color: var(--c-secondary);
+  font-family: var(--font);
   text-decoration: none;
   transition: background 150ms ease, color 150ms ease;
 }
@@ -330,7 +344,8 @@ onMounted(() => {
   color: var(--c-fg);
 }
 
-.side-item.is-active {
+.side-item.is-active,
+.side-brand.is-active {
   background: var(--c-muted);
   color: var(--c-fg);
   font-weight: 600;
