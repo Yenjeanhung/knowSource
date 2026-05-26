@@ -244,7 +244,7 @@ onMounted(() => {
       </button>
     </aside>
 
-    <main class="main-area">
+    <main class="main-area" :class="{ 'home-main': route.path === '/' }">
       <router-view v-slot="{ Component, route }">
         <KeepAlive v-if="route.meta.keepAlive">
           <component :is="Component" :key="route.params.kbId || route.path" />
@@ -429,6 +429,10 @@ onMounted(() => {
   z-index: 1;
 }
 
+.main-area.home-main {
+  padding-bottom: 0;
+}
+
 .is-collapsed .sidebar {
   width: 64px;
   padding-left: 6px;
@@ -485,6 +489,10 @@ onMounted(() => {
 
   .main-area {
     padding: 20px 16px 40px;
+  }
+
+  .main-area.home-main {
+    padding-bottom: 0;
   }
 }
 </style>

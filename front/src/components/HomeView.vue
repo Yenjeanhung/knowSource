@@ -52,7 +52,7 @@ const flowSteps = [
   <div class="home-view">
     <header class="home-head">
       <div class="home-title-block">
-        <h1>KnowSource 知识处理流程</h1>
+        <h1>KnowSource 知源知识中枢</h1>
         <p>从文件和数据采集开始，进入知识库加工，再输出到问答；向量和图谱作为知识库的索引与关系分析支线。</p>
       </div>
     </header>
@@ -243,7 +243,6 @@ const flowSteps = [
 
 <style scoped>
 .home-view {
-  min-height: calc(100dvh - 76px);
   color: var(--c-fg);
 }
 
@@ -274,6 +273,9 @@ const flowSteps = [
   position: relative;
   margin: 24px -32px 0;
   padding: 30px 32px;
+  min-height: clamp(650px, calc(100dvh - 230px), 1040px);
+  display: flex;
+  align-items: center;
   overflow: hidden;
   border-top: 1px solid rgba(73, 174, 196, 0.2);
   border-bottom: 1px solid rgba(73, 174, 196, 0.2);
@@ -296,6 +298,7 @@ const flowSteps = [
 .flow-map {
   position: relative;
   z-index: 1;
+  width: 100%;
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   grid-template-rows: minmax(238px, auto) minmax(224px, auto);
@@ -889,10 +892,6 @@ const flowSteps = [
 }
 
 @media (max-width: 640px) {
-  .home-view {
-    min-height: calc(100dvh - 60px);
-  }
-
   .home-title-block h1 {
     font-size: 26px;
   }
@@ -905,6 +904,7 @@ const flowSteps = [
     margin-left: -16px;
     margin-right: -16px;
     padding: 22px 16px;
+    min-height: 0;
   }
 
   .flow-card {
