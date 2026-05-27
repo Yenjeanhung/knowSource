@@ -122,6 +122,10 @@ const directoryTree = computed(() => {
 
 const selectedCount = computed(() => selectedAssets.value.size)
 const readyAssets = computed(() => assets.value.filter(item => item.status === 'ready'))
+const selectedDirectory = computed(() => directories.value.find(item => item.id === selectedDirectoryId.value) || null)
+const selectedDirectoryName = computed(() => selectedDirectory.value?.name || '全部文件')
+const crawlTargetDirectoryLabel = computed(() => selectedDirectory.value?.name || '采集')
+const isUsingDefaultCrawlDirectory = computed(() => !selectedDirectory.value)
 
 function fmtSize(value = 0) {
   if (value < 1024) return `${value} B`
@@ -582,7 +586,10 @@ onUnmounted(() => {
       <!-- 左侧文件夹树 -->
       <aside class="folder-panel">
         <div class="folder-tree-header">
-          <span class="tree-title">文件夹</span>
+          <div class="tree-header-meta">
+            <span class="tree-title">文件夹</span>
+            <span class="tree-selection-pill">当前: {{ selectedDirectoryName }}</span>
+          </div>
           <button class="tree-action-btn" @click="openCreateFolder" title="新建文件夹">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 20V4"/>
@@ -598,10 +605,12 @@ onUnmounted(() => {
             @dragleave="handleRootDragLeave"
             @drop="handleRootDrop"
           >
+            <span class="tree-active-marker" aria-hidden="true"></span>
             <svg class="folder-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
             </svg>
             <span class="folder-name">全部文件</span>
+            <span v-if="selectedDirectoryId === ''" class="selected-badge">当前</span>
           </div>
           
           <FolderTreeNode
@@ -643,6 +652,14 @@ onUnmounted(() => {
             <button class="icon-btn" v-if="!activeCrawlJobs.length" @click="showCrawlForm = false" title="收起">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
             </button>
+          </div>
+          <div :class="['crawl-target-banner', { warning: isUsingDefaultCrawlDirectory }]">
+            <div class="crawl-target-copy">
+              <span class="crawl-target-label">采集保存位置</span>
+              <strong class="crawl-target-name">{{ crawlTargetDirectoryLabel }}</strong>
+            </div>
+            <span v-if="isUsingDefaultCrawlDirectory" class="crawl-target-tip">未选择左侧目录时，将保存到默认“采集”目录。</span>
+            <span v-else class="crawl-target-tip">本次采集会保存到左侧当前选中的目录。</span>
           </div>
           <div class="crawl-hint">
             <span class="hint-item">页数：要采集的网页数量</span>
@@ -909,9 +926,17 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 8px 0 12px;
   border-bottom: 1px solid var(--c-border);
   margin-bottom: 8px;
+}
+
+.tree-header-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .tree-title {
@@ -920,6 +945,22 @@ onUnmounted(() => {
   color: var(--c-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.tree-selection-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 4px 10px;
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(245, 158, 11, 0.08));
+  color: #fbbf24;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tree-action-btn {
@@ -952,26 +993,44 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
   color: var(--c-secondary);
+  position: relative;
 }
 
 .tree-root-item:hover {
   background-color: var(--c-muted);
   color: var(--c-fg);
+  transform: translateX(2px);
 }
 
 .tree-root-item.active {
-  background-color: var(--c-accent-muted);
-  color: var(--c-fg);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(245, 158, 11, 0.08));
+  border-color: rgba(245, 158, 11, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.08);
+  color: #fff3d6;
 }
 
 .tree-root-item.drag-over {
   background-color: var(--c-accent-muted);
   border-left: 2px solid var(--c-accent);
+}
+
+.tree-active-marker {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 999px;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.tree-root-item.active .tree-active-marker {
+  background: linear-gradient(180deg, #f59e0b, #fcd34d);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.45);
 }
 
 .expand-placeholder {
@@ -994,12 +1053,56 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
+.selected-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fde68a;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .asset-panel { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .crawl-band, .attach-bar, .uploading-list { border: 1px solid var(--c-border); border-radius: 8px; background: var(--c-panel); padding: 12px; }
 .crawl-fields { display: flex; gap: 8px; align-items: center; }
 .small-input { width: 60px !important; text-align: center; }
 .depth-select { padding: 6px 8px; border: 1px solid var(--c-border); border-radius: 6px; font-size: 12px; background: var(--c-bg); min-width: 72px; }
 .crawl-btn { padding: 8px 16px !important; gap: 6px; white-space: nowrap; }
+.crawl-target-banner {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(245, 158, 11, 0.16);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(15, 23, 42, 0.18));
+}
+.crawl-target-banner.warning {
+  border-color: rgba(248, 113, 113, 0.24);
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.12), rgba(15, 23, 42, 0.18));
+}
+.crawl-target-copy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.crawl-target-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--c-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.crawl-target-name {
+  font-size: 15px;
+  color: var(--c-fg);
+}
+.crawl-target-tip {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--c-secondary);
+}
 .crawl-hint { display: flex; gap: 16px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--c-border); font-size: 11px; color: var(--c-secondary); }
 .hint-item { display: flex; align-items: center; gap: 4px; }
 

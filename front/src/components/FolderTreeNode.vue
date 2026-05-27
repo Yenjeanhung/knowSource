@@ -78,6 +78,7 @@ function handleDelete() {
       @dragleave="handleDragLeave"
       @drop="handleDrop"
     >
+      <span class="active-marker" aria-hidden="true"></span>
       <button
         v-if="node.children && node.children.length > 0"
         class="expand-toggle"
@@ -98,6 +99,7 @@ function handleDelete() {
       </div>
       
       <span class="item-name" :title="node.name">{{ node.name }}</span>
+      <span v-if="selectedId === node.id" class="selected-badge">当前</span>
       
       <div v-if="showActions" class="item-actions">
         <button class="action-btn edit-btn" @click.stop="emit('edit', node)" title="编辑">
@@ -175,10 +177,11 @@ function handleDelete() {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
   position: relative;
   color: var(--c-secondary);
 }
@@ -186,11 +189,27 @@ function handleDelete() {
 .folder-item:hover {
   background-color: var(--c-muted);
   color: var(--c-fg);
+  transform: translateX(2px);
 }
 
 .folder-item.active {
-  background-color: var(--c-accent-muted);
-  color: var(--c-fg);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(245, 158, 11, 0.08));
+  border-color: rgba(245, 158, 11, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.08);
+  color: #fff3d6;
+}
+
+.active-marker {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 999px;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.folder-item.active .active-marker {
+  background: linear-gradient(180deg, #f59e0b, #fcd34d);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.45);
 }
 
 .expand-toggle {
@@ -259,11 +278,22 @@ function handleDelete() {
 }
 
 .item-name {
+  flex: 1;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 13px;
+}
+
+.selected-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fde68a;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .item-actions {
